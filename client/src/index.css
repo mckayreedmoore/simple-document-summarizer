@@ -1,38 +1,87 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+@import 'tailwindcss';
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+html, body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  background-color: #18181b;
+  color: #e5e7eb;
+}
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  min-height: 100vh;
+  min-width: 100vw;
+  /* Remove overflow: hidden to allow scrolling if needed */
+}
+
+.dark body {
+  background-color: #18181b;
+  color: #e5e7eb;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  margin: 0;
+  padding: 0;
+  text-align: center;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.main-chat-container {
+  display: flex;
+  flex: 1 1 0%;
+  height: 100%;
+  overflow: hidden;
+  background: #18181b;
+}
+
+.sidebar {
+  width: 240px;
+  min-width: 180px;
+  background: #23272f;
+  color: #e5e7eb;
+  border-right: 1px solid #27272a;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  position: relative;
+  left: 0;
+  top: 0;
+  box-shadow: 2px 0 8px 0 rgba(0,0,0,0.04);
+}
+
+.chat-area {
+  flex: 1 1 0%;
+  display: flex;
+  flex-direction: column;
+  background: #18181b;
+  padding: 0;
+  overflow: hidden;
+  height: 100vh;
 }
 
 a {
   font-weight: 500;
-  color: #646cff;
+  color: #818cf8;
   text-decoration: inherit;
+  transition: color 0.2s;
 }
 a:hover {
-  color: #535bf2;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+  color: #a5b4fc;
 }
 
 h1 {
-  font-size: 3.2em;
+  font-size: 2.5rem;
   line-height: 1.1;
+  font-weight: 700;
+  margin-bottom: 1rem;
 }
 
 button {
@@ -42,27 +91,51 @@ button {
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
+  background-color: #27272a;
+  color: #e5e7eb;
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: border-color 0.25s, background 0.2s;
+  outline: none;
 }
 button:hover {
-  border-color: #646cff;
+  border-color: #818cf8;
+  background: #23272f;
 }
 button:focus,
 button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  outline: 2px solid #818cf8;
+}
+
+/* Remove extra padding from chat input area */
+.p-6 {
+  padding: 1rem !important;
+}
+
+/* Remove extra padding from chat window area */
+.p-8 {
+  padding: 1.5rem !important;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: 80px;
+    min-width: 60px;
+  }
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+  body {
+    background-color: #fff;
+    color: #18181b;
+  }
+  a {
+    color: #6366f1;
   }
   a:hover {
-    color: #747bff;
+    color: #818cf8;
   }
   button {
     background-color: #f9f9f9;
+    color: #18181b;
   }
 }

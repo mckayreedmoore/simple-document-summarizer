@@ -1,8 +1,47 @@
+/* App layout overrides for chat UI */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  min-height: 100vh;
+  padding: 0;
+  text-align: initial;
+  background: #f8fafc;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.app-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background: #f8fafc;
+}
+
+.sidebar {
+  min-width: 16rem;
+  max-width: 20rem;
+}
+
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Hide scrollbars for chat area (optional) */
+.chat-main .overflow-y-auto::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-main .overflow-y-auto {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .logo {
