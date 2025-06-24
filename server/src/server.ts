@@ -12,7 +12,7 @@ const app = express();
 app.use(helmet());
 app.use(cors());
 
-app.use('/api' router);
+app.use('/api', router);
 
 function startServer(port: number = Number(process.env.PORT) || 5000) { 
     app.listen(port, () => {

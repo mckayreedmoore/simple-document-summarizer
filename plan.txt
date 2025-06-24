@@ -1,0 +1,70 @@
+# Project Plan: Minimal RAG Chatbot Web App
+
+## 1. Overview
+Build a minimal Retrieval-Augmented Generation (RAG) chatbot web app. The app will:
+- Allow users to chat with an LLM.
+- Support file uploads (via icon or drag-and-drop) for document ingestion.
+- Store and search document embeddings for retrieval.
+- Display a chat interface with conversation history (like ChatGPT).
+
+## 2. Tech Stack
+- **Frontend:** React (Vite, TypeScript)
+- **Backend:** Node.js (Express or similar, TypeScript)
+- **Vector Store:** Use SQLite with the [sqlite-vss](https://github.com/asg017/sqlite-vss) extension for vector search (bare-bones, minimal setup, no external DB required).
+- **Embeddings/LLM:** Use OpenAI API (or similar) for embeddings and chat completions.
+
+## 3. Features & UI
+### 3.1. Chat UI
+- Left sidebar: List of conversations (history), new chat button.
+- Main area: Chat interface (messages, input box, submit button, file upload icon, drag-and-drop area).
+- New chat starts with a prompt: "Chat with me".
+- Enter key or submit button sends message.
+
+### 3.2. File Upload
+- Users can upload files (PDF, TXT, DOCX, etc.) via icon or drag-and-drop.
+- Uploaded files are sent to the backend for processing.
+- Backend extracts text, splits into chunks, generates embeddings, and stores in SQLite (with VSS extension).
+
+### 3.3. RAG Flow
+- On user message, backend retrieves relevant chunks from vector DB using embedding similarity.
+- Retrieved context is sent to LLM along with user message.
+- LLM response is returned to frontend and displayed.
+
+## 4. Implementation Steps
+### 4.1. Backend
+1. Set up Express server with endpoints:
+   - `/chat` (POST): Accepts user message, returns LLM response.
+   - `/upload` (POST): Accepts file uploads, processes and stores embeddings.
+   - `/conversations` (GET/POST): Manage chat history.
+2. Integrate OpenAI API for embeddings and chat completions.
+3. Set up SQLite DB with VSS extension:
+   - Table for document chunks (id, content, embedding vector, metadata).
+   - Table for conversations/messages.
+4. Implement file processing (text extraction, chunking, embedding generation).
+5. Implement vector search using SQLite VSS extension.
+
+### 4.2. Frontend
+1. Build chat UI (sidebar, chat area, input, upload, drag-and-drop).
+2. Implement file upload (icon, drag-and-drop, POST to backend).
+3. Display chat history and allow switching between conversations.
+4. Send/receive chat messages via backend API.
+5. Show loading states, errors, etc.
+
+## 5. Minimal Vector Search with SQLite
+- Use [sqlite-vss](https://github.com/asg017/sqlite-vss) to add vector search to SQLite.
+- Store embeddings as vectors in a table.
+- Use VSS extension to perform similarity search (e.g., top-k nearest neighbors).
+- No external vector DB required; everything runs in-process.
+
+## 6. Notes
+- For local dev, download and load the VSS extension in SQLite (see repo for instructions).
+- For production, consider alternatives (e.g., Qdrant, Pinecone, Chroma) if scaling up.
+- Keep code modular for easy swapping of vector DB or LLM provider.
+
+## 7. References
+- [sqlite-vss GitHub](https://github.com/asg017/sqlite-vss)
+- [OpenAI API docs](https://platform.openai.com/docs/api-reference)
+- [LangChain.js RAG example](https://js.langchain.com/docs/use_cases/question_answering)
+
+---
+This plan is designed for rapid prototyping and minimal setup. All components are chosen for simplicity and local development.
