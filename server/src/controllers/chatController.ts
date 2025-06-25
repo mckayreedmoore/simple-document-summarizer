@@ -16,12 +16,10 @@ export const chatController = {
   },
 
   async chat(req: Request, res: Response) {
-    const { message } = req.body;
-    if (!message) return res.status(400).json({ error: 'Message required' });
+    const { prompt, history } = req.body;
+    if (!prompt) return res.status(400).json({ error: 'Message required' });
     try {
-      // Automatically retrieve relevant context chunks
-      const context = await chatService.getRelevantChunks(message, 3);
-      const response = await chatService.getLlmResponse(message, context);
+      const response = await chatService.chatWithRagAndHistory(prompt, Array.isArray(history) ? history : []);
       res.json({ response });
     } catch (err) {
       console.error('Chat error:', err);

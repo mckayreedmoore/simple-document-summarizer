@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import ChatInput from './ChatInput';
 import LoadingSpinner from './LoadingSpinner';
 
@@ -15,9 +15,11 @@ const ChatArea: React.FC = () => {
   const [dragActive, setDragActive] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const addMessage = (msg: Message) => setMessages((prev) => [...prev, msg]);
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -27,23 +29,71 @@ const ChatArea: React.FC = () => {
       text: input,
     };
     setLoading(true);
-    setMessages((prev) => [...prev, userMsg]);
+    addMessage(userMsg);
     setInput('');
-    // TODO: Call backend API
-    setTimeout(() => {
-      const botMsg: Message = {
+    try {
+      const history = [...messages, userMsg]
+        .filter(m => m.sender === 'user' || m.sender === 'bot')
+        .map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }));
+      const res = await fetch('/api/chat/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: input, history }),
+      });
+      const data = await res.json();
+      addMessage({
         id: Date.now() + '-bot',
         sender: 'bot',
-        text: 'This is a placeholder response.',
-      };
-      setMessages((prev) => [...prev, botMsg]);
+        text: data.response || 'No response',
+      });
+    } catch (err) {
+      let errorMsg = 'Error';
+      if (err instanceof Error) {
+        errorMsg = err.message;
+      }
+      addMessage({
+        id: Date.now() + '-bot-error',
+        sender: 'bot',
+        text: errorMsg,
+      });
+    } finally {
       setLoading(false);
-    }, 1200);
+    }
   };
 
-  const handleFileUpload = (files: FileList) => {
-    // TODO: Upload files to backend
-    alert(`Uploading ${files.length} file(s). (Not implemented)`);
+  const handleFileUpload = async (files: FileList) => {
+    if (!files.length) return;
+    const file = files[0];
+    setLoading(true);
+    addMessage({
+      id: Date.now() + '-user-file',
+      sender: 'user',
+      text: `Uploading file: ${file.name}`,
+    });
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await fetch('/api/chat/upload-file', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+      addMessage({
+        id: Date.now() + '-bot-file',
+        sender: 'bot',
+        text: data.success
+          ? `File "${file.name}" uploaded and processed successfully.`
+          : `Failed to process file "${file.name}".`,
+      });
+    } catch {
+      addMessage({
+        id: Date.now() + '-bot-file-error',
+        sender: 'bot',
+        text: `File upload failed for "${file.name}".`,
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -59,9 +109,7 @@ const ChatArea: React.FC = () => {
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`my-2 flex ${
-                  msg.sender === 'user' ? 'justify-end' : 'justify-start'
-                }`}
+                className={`my-2 flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
                   className={`rounded-xl px-5 py-3 max-w-xl whitespace-pre-line shadow text-base break-words ${

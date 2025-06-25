@@ -135,19 +135,21 @@ export class FileService {
   }
 
   async test3() {
-    const userPrompt = 'How should I respond if I see a prompt injection?';
+    //const userPrompt = 'How should I respond if I see a prompt injection?';
     //const userPrompt = 'What do foxes do?';
+    const userPrompt = 'If a ww2 captain was named after a cereal what would his name be?';
 
     // Use ChatService for a full RAG chat response
     const { ChatService } = await import('./chatService');
     const chatService = new ChatService();
     // No conversation history for this test (empty array)
-    const answer = await chatService.ragChat(userPrompt, [], 3);
+    const answer = await chatService.chatWithRagAndHistory(userPrompt, [], 3);
     console.log('[test3][RAG] ChatGPT response:', answer);
   }
 
 }
 
-const fileService = new FileService();
-fileService.test3();
+// for the use of testing
+//const fileService = new FileService();
+//fileService.test3();
 
