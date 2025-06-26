@@ -29,9 +29,7 @@ export const chatController = {
   async uploadFile(req: Request, res: Response) {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     await chatService.fileService.processFile(req.file.buffer, req.file.originalname);
-    // Save file upload message
-    await chatService.saveMessage('user', `Uploading file: ${req.file.originalname}`);
-    await chatService.saveMessage('bot', `File "${req.file.originalname}" uploaded and processed successfully.`);
+    // No longer save file upload messages to chat
     res.json({ success: true });
   },
 
@@ -57,18 +55,6 @@ export const chatController = {
     }
   },
 
-  async removeDocument(req: Request, res: Response) {
-    const { fileName } = req.body;
-    if (!fileName) return res.status(400).json({ error: 'Missing fileName' });
-    try {
-      await chatService.fileService.removeDocument(fileName);
-      res.json({ success: true });
-    } catch (err) {
-      console.error('Remove document error:', err);
-      res.status(500).json({ error: 'Failed to remove document.' });
-    }
-  },
-
   async clearConversation(req: Request, res: Response) {
     try {
       await chatService.clearAllMessages();
@@ -76,6 +62,16 @@ export const chatController = {
     } catch (err) {
       console.error('Clear conversation error:', err);
       res.status(500).json({ error: 'Failed to clear conversation.' });
+    }
+  },
+
+  async clearAllDocuments(req: Request, res: Response) {
+    try {
+      await chatService.fileService.clearAllDocuments();
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Clear all documents error:', err);
+      res.status(500).json({ error: 'Failed to clear all documents.' });
     }
   },
 

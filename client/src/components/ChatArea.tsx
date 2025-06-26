@@ -9,7 +9,7 @@ interface Message {
   text: string;
 }
 
-const BOTTOM_BAR_HEIGHT = 90;
+const BOTTOM_BAR_HEIGHT = 75;
 
 const ChatArea: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -150,40 +150,46 @@ const ChatArea: React.FC = () => {
   const handleFileUpload = React.useCallback(async (files: FileList) => {
     if (!files.length) return;
     const file = files[0];
-    setLoading(true);
-    const formData = new FormData();
-    formData.append('file', file);
-    try {
-      const response = await fetch('/api/chat/upload-file', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await response.json();
-      addMessage({
-        id: Date.now() + '-bot-file',
-        sender: 'bot',
-        text: data.success
-          ? `File "${file.name}" uploaded and processed successfully.`
-          : `Failed to process file "${file.name}".`,
-      });
-      if (data.success) {
-        documentListRef.current?.refresh();
+    const tempId = 'uploading-' + Date.now() + '-' + Math.random();
+    documentListRef.current?.addUploading(tempId, file.name);
+    // Do not block UI
+    (async () => {
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const response = await fetch('/api/chat/upload-file', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await response.json();
+        if (data.success) {
+          // Refresh will replace the placeholder with the real doc
+          documentListRef.current?.refresh();
+        } else {
+          documentListRef.current?.removeUploading(tempId);
+          addMessage({
+            id: Date.now() + '-bot-file',
+            sender: 'bot',
+            text: `Failed to process file "${file.name}".`,
+          });
+        }
+      } catch {
+        documentListRef.current?.removeUploading(tempId);
+        addMessage({
+          id: Date.now() + '-bot-file-error',
+          sender: 'bot',
+          text: `File upload failed for "${file.name}".`,
+        });
       }
-    } catch {
-      addMessage({
-        id: Date.now() + '-bot-file-error',
-        sender: 'bot',
-        text: `File upload failed for "${file.name}".`,
-      });
-    } finally {
-      setLoading(false);
-    }
+    })();
   }, [addMessage]);
 
   const handleClearConversation = async () => {
     setLoading(true);
     await fetch('/api/chat/clear', { method: 'POST' });
+    await fetch('/api/documents/clear', { method: 'POST' });
     setMessages([]);
+    documentListRef.current?.refresh();
     setLoading(false);
   };
 

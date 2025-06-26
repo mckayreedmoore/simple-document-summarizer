@@ -3,6 +3,8 @@ import path from 'path';
 const vectorious = require('vectorious');
 import { getDatabaseInstance, setupDatabase } from '../utilities/db';
 import OpenAI from 'openai';
+import pdfParse from 'pdf-parse';
+import mammoth from 'mammoth';
 
 export class FileService {
   public db;
@@ -16,7 +18,20 @@ export class FileService {
 
   async processFile(fileBuffer: Buffer, fileName: string): Promise<void> {
     try {
-      const text = fileBuffer.toString('utf-8');
+      let text = '';
+      const ext = path.extname(fileName).toLowerCase();
+      if (ext === '.pdf') {
+        // PDF extraction
+        const data = await pdfParse(fileBuffer);
+        text = data.text;
+      } else if (ext === '.docx') {
+        // DOCX extraction
+        const result = await mammoth.extractRawText({ buffer: fileBuffer });
+        text = result.value;
+      } else {
+        // Default: treat as UTF-8 text
+        text = fileBuffer.toString('utf-8');
+      }
       const chunkSize = 1000;
       const chunks: string[] = [];
       for (let i = 0; i < text.length; i += chunkSize) {
@@ -24,7 +39,6 @@ export class FileService {
       }
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
-        // Use real embedding
         const embedding = await this.getEmbedding(chunk);
         await this.storeChunk(fileName, i, chunk, embedding);
       }
@@ -194,12 +208,12 @@ export class FileService {
     }
   }
 
-  async listUploadedDocuments(): Promise<{ file_name: string }[]> {
+  async listUploadedDocuments(): Promise<{ id: number, file_name: string }[]> {
     const db = this.db;
     return new Promise((resolve, reject) => {
       try {
         db.all(
-          'SELECT DISTINCT file_name FROM documents',
+          'SELECT rowid as id, file_name FROM documents WHERE chunk_index = 0 ORDER BY id DESC',
           (err: Error | null, rows: any[]) => {
             if (err) {
               console.error('DB error in listUploadedDocuments:', err);
@@ -215,39 +229,34 @@ export class FileService {
     });
   }
 
-  async removeDocument(fileName: string): Promise<void> {
+  async clearAllDocuments(): Promise<void> {
     const db = this.db;
     return new Promise((resolve, reject) => {
       try {
-        db.serialize(() => {
-          db.all('SELECT rowid FROM documents WHERE file_name = ?', [fileName], (err, rows) => {
+        db.run('DELETE FROM document_vectors', (err: Error | null) => {
+          if (err) {
+            console.error('DB error in clearAllDocuments (vectors):', err);
+            return reject(err);
+          }
+          db.run('DELETE FROM documents', (err: Error | null) => {
             if (err) {
-              console.error('DB error in removeDocument (select):', err);
+              console.error('DB error in clearAllDocuments (documents):', err);
               return reject(err);
             }
-            const docIds = rows.map((row: any) => row.rowid);
-            if (docIds.length === 0) return resolve();
-            db.run('DELETE FROM document_vectors WHERE doc_id IN (' + docIds.map(() => '?').join(',') + ')', docIds, (err) => {
-              if (err) {
-                console.error('DB error in removeDocument (delete vectors):', err);
-                return reject(err);
-              }
-              db.run('DELETE FROM documents WHERE file_name = ?', [fileName], (err) => {
-                if (err) {
-                  console.error('DB error in removeDocument (delete documents):', err);
-                  return reject(err);
-                }
-                resolve();
-              });
-            });
+            resolve();
           });
         });
       } catch (err) {
-        console.error('Exception in removeDocument:', err);
+        console.error('Exception in clearAllDocuments:', err);
         reject(err);
       }
     });
   }
+
+  // Remove individual document delete logic
+  // RemoveDocument API and service method are now obsolete
+
+  // Optionally, you may want to add a clearAllDocuments method here for bulk deletion if not already present.
 }
 
 // for the use of testing
