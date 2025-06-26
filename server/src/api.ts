@@ -7,9 +7,10 @@ const router = express.Router();
 const upload = multer();
 
 router.get('/chat/get', asyncHandler(chatController.get as express.RequestHandler));
-router.get('/chat/get-all-dtos', asyncHandler(chatController.getAllDtos as express.RequestHandler));
-
 router.post('/chat/submit', asyncHandler(chatController.chat as express.RequestHandler));
 router.post('/chat/upload-file', upload.single('file'), asyncHandler(chatController.uploadFile as express.RequestHandler));
+router.get('/documents/list', asyncHandler(chatController.listDocuments as express.RequestHandler));
+router.post('/documents/remove', asyncHandler(chatController.removeDocument as express.RequestHandler));
+router.post('/chat/clear', asyncHandler(chatController.clearConversation as express.RequestHandler));
 
 export default router;

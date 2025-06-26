@@ -8,6 +8,9 @@ interface ChatInputProps {
   onFileUpload: (files: FileList) => void;
   dragActive: boolean;
   setDragActive: (active: boolean) => void;
+  className?: string;
+  onClearConversation?: () => void;
+  clearLoading?: boolean;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -18,6 +21,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   onFileUpload,
   dragActive,
   setDragActive,
+  className,
+  onClearConversation,
+  clearLoading,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -43,50 +49,73 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(false);
+  };
+
   return (
     <div
-      className={`flex items-center gap-2 p-0 border-none bg-zinc-900 relative rounded-b-xl ${dragActive ? 'ring-2 ring-blue-400' : ''}`}
-      onDragOver={e => { e.preventDefault(); setDragActive(true); }}
-      onDragLeave={e => { e.preventDefault(); setDragActive(false); }}
+      className={`relative flex items-center gap-2 w-full ${className || ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      style={{ height: '100%' }}
     >
       <input
-        className="flex-1 border-none rounded-lg px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400 bg-zinc-800 text-zinc-100 placeholder-zinc-400 shadow-sm transition-all duration-200"
         type="text"
+        className="flex-1 rounded-lg border border-zinc-400 bg-zinc-800 text-zinc-100 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 transition text-base h-full"
         placeholder="Type your message..."
         value={value}
         onChange={e => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         disabled={disabled}
-        style={{ minHeight: '48px' }}
+        style={{ height: '100%' }}
       />
-      <button
-        className="ml-2 flex items-center gap-1 bg-zinc-700 hover:bg-zinc-800 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-        onClick={() => fileInputRef.current?.click()}
-        title="Upload file"
-        type="button"
-        disabled={disabled}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V4.75m0 11.75l-3.25-3.25m3.25 3.25l3.25-3.25M4.75 19.25h14.5" />
-        </svg>
-        <span className="hidden sm:inline">Upload</span>
+      <div className="flex items-center gap-2 h-full">
+        <button
+          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg transition disabled:opacity-50 h-full"
+          onClick={onSend}
+          disabled={disabled}
+          style={{ height: '100%' }}
+        >
+          Send
+        </button>
+        <button
+          className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition disabled:opacity-50 h-full"
+          onClick={onClearConversation}
+          disabled={disabled || clearLoading}
+          style={{ height: '100%' }}
+          title="Clear all chat messages"
+        >
+          Clear
+        </button>
         <input
           type="file"
-          multiple
-          className="hidden"
           ref={fileInputRef}
+          style={{ display: 'none' }}
           onChange={handleFileChange}
         />
-      </button>
-      <button
-        className="ml-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg transition-colors disabled:opacity-50"
-        onClick={onSend}
-        disabled={disabled || !value.trim()}
-        type="button"
-      >
-        Send
-      </button>
+        <button
+          className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200 font-semibold px-4 py-2 rounded-lg transition disabled:opacity-50 h-full"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled}
+          style={{ height: '100%' }}
+          title="Upload file"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mx-auto">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16" />
+          </svg>
+        </button>
+      </div>
+      {dragActive && (
+        <div className="absolute inset-0 bg-blue-400 bg-opacity-20 rounded-lg pointer-events-none z-10" />
+      )}
     </div>
   );
 };

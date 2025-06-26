@@ -25,7 +25,20 @@ export function setupDatabase(db: sqlite3.Database): Promise<void> {
       `, (err) => {
         if (err) reject(err);
         else {
-          resolve();
+          // Add a table for chat messages
+          db.run(`
+            CREATE TABLE IF NOT EXISTS chat_messages (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sender TEXT,
+              text TEXT,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+          `, (err) => {
+            if (err) reject(err);
+            else {
+              resolve();
+            }
+          });
         }
       });
     });
