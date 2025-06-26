@@ -78,4 +78,37 @@ export const chatController = {
       res.status(500).json({ error: 'Failed to clear conversation.' });
     }
   },
+
+  // Streams chat response incrementally using SSE
+  async streamChat(req: Request, res: Response) {
+    const { prompt, history } = req.body;
+    if (!prompt) {
+      res.status(400).json({ error: 'Message required' });
+      return;
+    }
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    let fullResponse = '';
+    try {
+      await chatService.saveMessage('user', prompt);
+      await chatService.streamChatWithRagAndHistory(
+        prompt,
+        Array.isArray(history) ? history : [],
+        3,
+        (token: string) => {
+          fullResponse += token;
+          res.write(`data: ${JSON.stringify({ token })}\n\n`);
+        }
+      );
+      await chatService.saveMessage('bot', fullResponse);
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+    } catch (err) {
+      console.error('Stream chat error:', err);
+      res.write(`data: ${JSON.stringify({ error: 'Failed to stream chat.' })}\n\n`);
+      res.end();
+    }
+  },
 };

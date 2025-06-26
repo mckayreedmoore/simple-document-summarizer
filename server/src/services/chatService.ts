@@ -109,6 +109,36 @@ export class ChatService {
     }
   }
 
+  // Streams RAG+history chat completions incrementally using OpenAI's streaming API
+  public async streamChatWithRagAndHistory(userPrompt: string, conversationHistory: {role: string, content: string}[] = [], k: number = 3, onToken: (token: string) => void): Promise<void> {
+    try {
+      const contextChunks = await this.getRelevantChunks(userPrompt, k);
+      const contextMessage = `Context:\n${contextChunks.join('\n---\n')}`;
+      const messages: ChatCompletionMessageParam[] = [
+        { role: 'system', content: 'You are a helpful assistant.' },
+        { role: 'system', content: contextMessage },
+        ...conversationHistory.map(m => ({
+          role: (['user', 'assistant', 'system'].includes(m.role) ? m.role : 'user') as 'user' | 'assistant' | 'system',
+          content: m.content
+        })),
+        { role: 'user', content: userPrompt },
+      ];
+      const stream = await this.openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages,
+        max_tokens: 512,
+        stream: true,
+      });
+      for await (const chunk of stream) {
+        const content = chunk.choices?.[0]?.delta?.content;
+        if (content) onToken(content);
+      }
+    } catch (err) {
+      console.error('Error in streamChatWithRagAndHistory:', err);
+      throw new Error('Failed to stream chat response');
+    }
+  }
+
   async saveMessage(sender: string, text: string): Promise<void> {
     const db = this.db;
     return new Promise((resolve, reject) => {

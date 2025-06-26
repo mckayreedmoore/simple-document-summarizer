@@ -1,6 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
 import ChatInput from './ChatInput';
-import LoadingSpinner from './LoadingSpinner';
 import DocumentList from './DocumentList';
 import type { DocumentListHandle } from './DocumentList';
 
@@ -56,6 +55,7 @@ const ChatArea: React.FC = () => {
     setMessages((prev) => [...prev, msg]);
   }, []);
 
+  // Streaming chat handler
   const handleSend = async () => {
     if (!input.trim()) return;
     const userMsg: Message = {
@@ -70,17 +70,69 @@ const ChatArea: React.FC = () => {
       const history = [...messages, userMsg]
         .filter(m => m.sender === 'user' || m.sender === 'bot')
         .map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }));
-      const res = await fetch('/api/chat/submit', {
+      const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: input, history }),
       });
-      const data = await res.json();
-      addMessage({
+      if (!res.body) throw new Error('No response body');
+      let botMsg: Message = {
         id: Date.now() + '-bot',
         sender: 'bot',
-        text: data.response || 'No response',
-      });
+        text: '',
+      };
+      addMessage(botMsg);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+      let buffer = '';
+      while (!done) {
+        const { value, done: doneReading } = await reader.read();
+        done = doneReading;
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split(/\n\n/);
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.slice(6));
+              if (data.token) {
+                botMsg = {
+                  ...botMsg,
+                  text: (botMsg.text || '') + data.token,
+                };
+                setMessages(prev => {
+                  const last = prev[prev.length - 1];
+                  if (last && last.id === botMsg.id) {
+                    return [...prev.slice(0, -1), botMsg];
+                  } else {
+                    return [...prev, botMsg];
+                  }
+                });
+              }
+              if (data.done) {
+                setLoading(false);
+              }
+              if (data.error) {
+                botMsg = {
+                  ...botMsg,
+                  text: data.error,
+                };
+                setMessages(prev => {
+                  const last = prev[prev.length - 1];
+                  if (last && last.id === botMsg.id) {
+                    return [...prev.slice(0, -1), botMsg];
+                  } else {
+                    return [...prev, botMsg];
+                  }
+                });
+                setLoading(false);
+              }
+            }
+          }
+        }
+      }
+      setLoading(false);
     } catch (err) {
       let errorMsg = 'Error';
       if (err instanceof Error) {
@@ -91,7 +143,6 @@ const ChatArea: React.FC = () => {
         sender: 'bot',
         text: errorMsg,
       });
-    } finally {
       setLoading(false);
     }
   };
@@ -166,7 +217,7 @@ const ChatArea: React.FC = () => {
 
   return (
     <div className="flex items-center justify-center min-h-screen w-full bg-zinc-900">
-      <div ref={chatAreaRef} className={"flex flex-col bg-zinc-900 rounded-2xl shadow-lg border border-zinc-300 w-[75vw] h-[75vh] mx-4 md:mx-8 lg:mx-16 overflow-hidden relative " + (dragActive ? 'ring-4 ring-blue-400 ring-opacity-60' : '')}>
+      <div ref={chatAreaRef} className={"flex flex-col bg-zinc-900 rounded-2xl shadow-lg border border-zinc-300 w-[70vw] h-[90vh] mx-4 md:mx-8 lg:mx-16 overflow-hidden relative " + (dragActive ? 'ring-4 ring-blue-400 ring-opacity-60' : '')}>
         <div className="flex-1 overflow-y-auto p-8 flex flex-col min-h-0 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent scrollbar-corner-transparent">
           <div className="flex-1 flex flex-col w-full min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent scrollbar-corner-transparent pr-4">
             <div className="flex justify-end mb-2">
@@ -182,7 +233,7 @@ const ChatArea: React.FC = () => {
                 className={`my-2 flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`rounded-xl px-5 py-3 max-w-xl whitespace-pre-line shadow text-base break-words ${
+                  className={`rounded-xl px-5 py-3 max-w-3xl whitespace-pre-line shadow text-base break-words text-left ${
                     msg.sender === 'user'
                       ? 'bg-blue-600 text-white rounded-br-md ml-auto mr-1'
                       : 'bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-bl-md ml-1 mr-auto'
@@ -192,9 +243,6 @@ const ChatArea: React.FC = () => {
                 </div>
               </div>
             ))}
-            {loading && (
-              <div className="text-zinc-500 text-center mt-2">Thinking...</div>
-            )}
             <div ref={bottomRef} />
           </div>
         </div>
@@ -221,11 +269,14 @@ const ChatArea: React.FC = () => {
             </div>
           </div>
         </div>
+        {/* Remove or comment out the loading overlay so chat is visible while streaming */}
+        {/*
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50 rounded-xl">
             <LoadingSpinner />
           </div>
         )}
+        */}
       </div>
     </div>
   );

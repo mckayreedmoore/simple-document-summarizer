@@ -12,5 +12,7 @@ router.post('/chat/upload-file', upload.single('file'), asyncHandler(chatControl
 router.get('/documents/list', asyncHandler(chatController.listDocuments as express.RequestHandler));
 router.post('/documents/remove', asyncHandler(chatController.removeDocument as express.RequestHandler));
 router.post('/chat/clear', asyncHandler(chatController.clearConversation as express.RequestHandler));
+// Streaming chat route (do not wrap in asyncHandler)
+router.post('/chat/stream', chatController.streamChat as express.RequestHandler);
 
 export default router;
