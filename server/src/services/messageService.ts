@@ -4,7 +4,7 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import { FileService } from './fileService';
 import { Message } from '../models/message';
 import { logger } from '../utilities/logger';
-import { getDatabaseInstance } from '../utilities/db';
+import { getDatabaseInstance, runAsync } from '../utilities/db';
 
 export class MessageService {
   private fileService: FileService;
@@ -117,20 +117,30 @@ export class MessageService {
     }
   }
 
-  async deleteAll(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      try {
-        this.db.run('DELETE FROM Messages', (err: Error | null) => {
-          if (err) {
-            logger.error('DB error in clearAllMessages:', err);
-            return reject(err);
-          }
-          resolve();
-        });
-      } catch (err) {
-        logger.error('Exception in clearAllMessages:', err);
-        reject(err);
-      }
+  // Transactional clear for all messages and documents
+  public async clearAllData(): Promise<void> {
+    const db = this.db;
+    return new Promise<void>((resolve, reject) => {
+      db.serialize(() => {
+        logger.info('Beginning clearAllData transaction');
+        runAsync(db, 'BEGIN TRANSACTION')
+          .then(() => runAsync(db, 'DELETE FROM Messages'))
+          .then(() => this.fileService.deleteAllDocumentsInTransaction(db))
+          .then(() => runAsync(db, 'COMMIT'))
+          .then(() => {
+            logger.info('All messages, documents, and vectors cleared from the database');
+            resolve();
+          })
+          .catch(async (err: unknown) => {
+            logger.error('DB error in clearAllData:', err);
+            try {
+              await runAsync(db, 'ROLLBACK');
+            } catch (rollbackErr) {
+              logger.error('Error during ROLLBACK in clearAllData:', rollbackErr);
+            }
+            reject(err);
+          });
+      });
     });
   }
 }

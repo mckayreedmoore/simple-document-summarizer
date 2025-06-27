@@ -225,7 +225,20 @@ export class FileService {
     });
   }
 
-  // Moved from ChatService
+  // Delete all document data, providing same db to ensure same connection
+  public async deleteAllDocumentsInTransaction(db: any): Promise<void> {
+    return new Promise((resolve, reject) => {
+      db.run('DELETE FROM DocumentChunks', (err: Error | null) => {
+        if (err) {
+          logger.error('DB error in deleteAllDocumentsInTransaction (DocumentChunks):', err);
+          return reject(err);
+        }
+        logger.info('All documents and vectors cleared from the database (transactional)');
+        resolve();
+      });
+    });
+  }
+
   public async getEmbedding(text: string): Promise<number[]> {
     try {
       const response = await this.openai.embeddings.create({

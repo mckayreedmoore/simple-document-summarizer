@@ -27,8 +27,7 @@ export const conversationController = {
 
   async clearConversation(req: Request, res: Response, next: NextFunction) {
     logger.info('POST /conversation/clear - clearing all messages and documents');
-    await messageService.deleteAll();
-    await fileService.clearAllDocuments();
+    await messageService.clearAllData();
     res.json({ success: true });
   },
 

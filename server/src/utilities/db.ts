@@ -14,7 +14,7 @@ export function getDatabaseInstance(): sqlite3.Database {
   return dbInstance;
 }
 
-function runAsync(db: sqlite3.Database, sql: string): Promise<void> {
+export function runAsync(db: sqlite3.Database, sql: string): Promise<void> {
   return new Promise((resolve, reject) => {
     db.run(sql, (err) => (err ? reject(err) : resolve()));
   });
