@@ -8,21 +8,20 @@ const upload = multer();
 
 router.get(
   '/conversation/get',
-  asyncHandler(conversationController.get as express.RequestHandler)
+  asyncHandler(conversationController.getConversation)
 );
 router.post(
   '/conversation/upload-file',
   upload.single('file'),
-  asyncHandler(conversationController.uploadFile as express.RequestHandler)
+  asyncHandler(conversationController.uploadFile)
 );
 router.post(
   '/conversation/clear',
-  asyncHandler(conversationController.clearConversation as express.RequestHandler)
+  asyncHandler(conversationController.clearConversation)
 );
-
 router.post(
   '/conversation/stream',
-  conversationController.streamConversation as express.RequestHandler
+  conversationController.streamConversation
 );
 
 export default router;

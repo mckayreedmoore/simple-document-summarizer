@@ -3,7 +3,7 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 
 import { FileService } from './fileService';
 import { Message } from '../models/message';
-import { EmbeddingModel } from 'openai/resources/embeddings';
+import { logger } from '../utilities/logger';
 
 export class ChatService {
   public fileService: FileService;
@@ -27,48 +27,17 @@ export class ChatService {
           'SELECT messageId, sender, text, createdAt as createdAt FROM Messages ORDER BY messageId ASC',
           (err: Error | null, rows: Message[]) => {
             if (err) {
-              console.error('DB error in getAllMessages:', err);
+              logger.error('DB error in getAllMessages:', err);
               return reject(err);
             }
             resolve(rows);
           }
         );
       } catch (err) {
-        console.error('Exception in getAllMessages:', err);
+        logger.error('Exception in getAllMessages:', err);
         reject(err);
       }
     });
-  }
-
-  private async getEmbedding(text: string): Promise<number[]> {
-    try {
-      const response = await this.openai.embeddings.create({
-        model: process.env.OPENAI_EMBEDDING_MODEL as (string & {}) | EmbeddingModel,
-        input: text,
-      });
-      return response.data[0].embedding;
-    } catch (err) {
-      console.error('OpenAI Embedding API error:', err);
-      throw new Error('Failed to get embedding');
-    }
-  }
-
-  private async getRelevantChunks(query: string, k: number = 3): Promise<string[]> {
-    try {
-      // Get embedding for the query
-      const embedding = await this.getEmbedding(query);
-      // Query the vector DB for similar chunks
-      const results = await this.fileService.querySimilarChunks(embedding, k);
-      if (!results || results.length === 0) return [];
-      // Fetch the actual chunk content
-      const chunks = await Promise.all(
-        results.map((r) => this.fileService.getChunkById(r.fkChunkId))
-      );
-      return chunks.map((c) => c.content);
-    } catch (err) {
-      console.error('Error in getRelevantChunks:', err);
-      throw new Error('Failed to get relevant chunks');
-    }
   }
 
   async saveMessage(sender: string, text: string): Promise<void> {
@@ -80,28 +49,17 @@ export class ChatService {
           [sender, text],
           function (err: Error | null) {
             if (err) {
-              console.error('DB error in saveMessage:', err);
+              logger.error('DB error in saveMessage:', err);
               return reject(err);
             }
             resolve();
           }
         );
       } catch (err) {
-        console.error('Exception in saveMessage:', err);
+        logger.error('Exception in saveMessage:', err);
         reject(err);
       }
     });
-  }
-
-  private createFileContextMessage(fileContent: string): ChatCompletionMessageParam {
-    return {
-      role: 'file' as any, // OpenAI API only allows 'system', 'user', 'assistant', but we use this internally
-      content:
-        '[File Context]\n' +
-        fileContent +
-        '\n[End of File Context]\n' +
-        '\nDo not respond to this message. Use it only as context for answering user questions.'
-    };
   }
 
   public async streamChat(
@@ -121,11 +79,11 @@ export class ChatService {
         fileContent = await this.fileService.getFullDocumentText(latestFile);
         fileContextInjected = !!fileContent;
         if (fileContent) {
-          fileContextMessage = this.createFileContextMessage(fileContent);
+          fileContextMessage = this.fileService.createFileContextMessage(fileContent);
         }
       }
     }
-    const contextChunks = await this.getRelevantChunks(userPrompt, k);
+    const contextChunks = await this.fileService.getRelevantChunks(userPrompt, k);
     const contextMessage = `Context:\n${contextChunks.join('\n---\n')}`;
     const messages: ChatCompletionMessageParam[] = [
       { role: 'system', content: 'You are a helpful assistant.' },
@@ -141,7 +99,7 @@ export class ChatService {
     if (fileContextInjected) {
       // Fallback to non-streaming single response
       const response = await this.openai.chat.completions.create({
-        model: process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo',
+        model: process.env.OPENAI_CHAT_MODEL as string,
         messages,
         max_tokens: 512,
       });
@@ -150,7 +108,7 @@ export class ChatService {
     }
     // Otherwise, stream as usual
     const stream = await this.openai.chat.completions.create({
-      model: process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo',
+      model: process.env.OPENAI_CHAT_MODEL as string,
       messages,
       max_tokens: 512,
       stream: true,
@@ -167,13 +125,13 @@ export class ChatService {
       try {
         db.run('DELETE FROM Messages', (err: Error | null) => {
           if (err) {
-            console.error('DB error in clearAllMessages:', err);
+            logger.error('DB error in clearAllMessages:', err);
             return reject(err);
           }
           resolve();
         });
       } catch (err) {
-        console.error('Exception in clearAllMessages:', err);
+        logger.error('Exception in clearAllMessages:', err);
         reject(err);
       }
     });
