@@ -4,26 +4,25 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import { FileService } from './fileService';
 import { Message } from '../models/message';
 import { logger } from '../utilities/logger';
+import { getDatabaseInstance } from '../utilities/db';
 
-export class ChatService {
-  public fileService: FileService;
+export class MessageService {
+  private fileService: FileService;
   private openai: OpenAI;
-  private db;
+  private readonly db;
 
   constructor() {
-    // You should set OPENAI_API_KEY in your environment variables
     this.openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
-    this.fileService = new FileService(/*this.getEmbedding.bind(this)*/);
-    this.db = this.fileService.db;
+    this.fileService = new FileService();
+    this.db = getDatabaseInstance();
   }
 
   async get(): Promise<Message[]> {
-    const db = this.db;
     return new Promise((resolve, reject) => {
       try {
-        db.all(
+        this.db.all(
           'SELECT messageId, sender, text, createdAt as createdAt FROM Messages ORDER BY messageId ASC',
           (err: Error | null, rows: Message[]) => {
             if (err) {
@@ -41,10 +40,9 @@ export class ChatService {
   }
 
   async saveMessage(sender: string, text: string): Promise<void> {
-    const db = this.db;
     return new Promise((resolve, reject) => {
       try {
-        db.run(
+        this.db.run(
           'INSERT INTO Messages (sender, text) VALUES (?, ?)',
           [sender, text],
           function (err: Error | null) {
@@ -120,10 +118,9 @@ export class ChatService {
   }
 
   async deleteAll(): Promise<void> {
-    const db = this.db;
     return new Promise((resolve, reject) => {
       try {
-        db.run('DELETE FROM Messages', (err: Error | null) => {
+        this.db.run('DELETE FROM Messages', (err: Error | null) => {
           if (err) {
             logger.error('DB error in clearAllMessages:', err);
             return reject(err);

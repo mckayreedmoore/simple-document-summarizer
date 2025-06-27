@@ -1,16 +1,16 @@
 // conversationController.ts
 import { Request, Response, NextFunction } from 'express';
-import { ChatService } from '../services/chatService';
+import { MessageService } from '../services/messageService';
 import { FileService } from '../services/fileService';
 import { logger } from '../utilities/logger';
 
-const chatService = new ChatService();
+const messageService = new MessageService();
 const fileService = new FileService();
 
 export const conversationController = {
   async getConversation(req: Request, res: Response, next: NextFunction) {
     logger.info('GET /conversation - fetching messages and documents');
-    const messages = await chatService.get();
+    const messages = await messageService.get();
     const documents = await fileService.listUploadedDocuments();
     res.json({ messages, documents });
   },
@@ -21,13 +21,13 @@ export const conversationController = {
       return res.status(400).json({ error: 'No file uploaded' });
     }
     logger.info(`POST /conversation/upload-file - uploading file: ${req.file.originalname}`);
-    await chatService.fileService.processFile(req.file.buffer, req.file.originalname);
+    await fileService.processFile(req.file.buffer, req.file.originalname);
     res.json({ success: true });
   },
 
   async clearConversation(req: Request, res: Response, next: NextFunction) {
     logger.info('POST /conversation/clear - clearing all messages and documents');
-    await chatService.deleteAll();
+    await messageService.deleteAll();
     await fileService.clearAllDocuments();
     res.json({ success: true });
   },
@@ -46,8 +46,8 @@ export const conversationController = {
     res.flushHeaders();
     let fullResponse = '';
     try {
-      await chatService.saveMessage('user', prompt);
-      await chatService.streamChat(
+      await messageService.saveMessage('user', prompt);
+      await messageService.streamChat(
         prompt,
         Array.isArray(history) ? history : [],
         3,
@@ -56,7 +56,7 @@ export const conversationController = {
           res.write(`data: ${JSON.stringify({ token })}\n\n`);
         }
       );
-      await chatService.saveMessage('bot', fullResponse);
+      await messageService.saveMessage('bot', fullResponse);
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
     } catch (err) {

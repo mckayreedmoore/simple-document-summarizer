@@ -1,19 +1,18 @@
 import fs from 'fs';
 import path from 'path';
-import { getDatabaseInstance, setupDatabase } from '../utilities/db';
+import { getDatabaseInstance } from '../utilities/db';
 import OpenAI from 'openai';
 import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import { logger } from '../utilities/logger';
 
 export class FileService {
-  public db;
-  private openai;
+  private openai: OpenAI;
+  private readonly db;
 
   constructor() {
-    this.db = getDatabaseInstance();
-    setupDatabase(this.db);
     this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    this.db = getDatabaseInstance();
   }
 
   async listUploadedDocuments(): Promise<{ id: number; fileName: string }[]> {
@@ -154,8 +153,43 @@ export class FileService {
           idx++;
           batch.push(
             (async (chunkIdx, chunkData) => {
-              // This is where embedding and storage would happen
-              // But since storeChunk and getEmbedding are removed, you may want to implement your own logic here if needed
+              // Store chunk in DocumentChunks
+              const chunkId: number = await new Promise((resolve, reject) => {
+                self.db.run(
+                  'INSERT INTO DocumentChunks (fileName, chunkIndex, content) VALUES (?, ?, ?)',
+
+                  [fileName, chunkIdx, chunkData],
+                  function (err: Error | null) {
+                    if (err) {
+                      logger.error('DB error in processFile (insert chunk):', err);
+                      return reject(err);
+                    }
+                    // Get the inserted chunkId
+                    resolve((this as any).lastID);
+                  }
+                );
+              });
+              // Get embedding for the chunk
+              try {
+                const embedding = await self.getEmbedding(chunkData);
+                // Store embedding in DocumentVectors
+                await new Promise<void>((resolve, reject) => {
+                  self.db.run(
+                    'INSERT INTO DocumentVectors (embedding, fkChunkId) VALUES (?, ?)',
+
+                    [JSON.stringify(embedding), chunkId],
+                    (err: Error | null) => {
+                      if (err) {
+                        logger.error('DB error in processFile (insert embedding):', err);
+                        return reject(err);
+                      }
+                      resolve();
+                    }
+                  );
+                });
+              } catch (err) {
+                logger.error('Error getting/storing embedding for chunk:', err);
+              }
             })(chunkIndex, chunk)
           );
         }
@@ -176,19 +210,13 @@ export class FileService {
     const db = this.db;
     return new Promise((resolve, reject) => {
       try {
-        db.run('DELETE FROM DocumentVectors', (err: Error | null) => {
+        db.run('DELETE FROM DocumentChunks', (err: Error | null) => {
           if (err) {
-            logger.error('DB error in clearAllDocuments (DocumentVectors):', err);
+            logger.error('DB error in clearAllDocuments (DocumentChunks):', err);
             return reject(err);
           }
-          db.run('DELETE FROM DocumentChunks', (err: Error | null) => {
-            if (err) {
-              logger.error('DB error in clearAllDocuments (DocumentChunks):', err);
-              return reject(err);
-            }
-            logger.info('All documents and vectors cleared from the database');
-            resolve();
-          });
+          logger.info('All documents and vectors cleared from the database');
+          resolve();
         });
       } catch (err) {
         logger.error('Exception in clearAllDocuments:', err);

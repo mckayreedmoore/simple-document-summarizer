@@ -1,6 +1,8 @@
 const settingsSchema = {
   PORT: 'number',
   FILE_CONCURRENCY_PROCESS_LIMIT: 'number',
+  DB_PATH: 'string',
+  
   OPENAI_API_KEY: 'string',
   OPENAI_EMBEDDING_MODEL: 'string',
   OPENAI_CHAT_MODEL: 'string',

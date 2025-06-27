@@ -3,10 +3,12 @@ import helmet from 'helmet';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import validateEnv from './utilities/validateEnv';
-import { logger } from './utilities/logger';
+
 dotenv.config();
 validateEnv();
 
+import { logger } from './utilities/logger';
+import { setupDatabase } from './utilities/db';
 import router from './api';
 import { errorHandler } from './middlewares/errorHandler';
 
@@ -21,10 +23,16 @@ app.use('/api', router);
 // Global error handler 
 app.use(errorHandler);
 
-function startServer(port: number = Number(process.env.PORT)) {
-  app.listen(port, () => {
-    logger.info(`Server running on port: ${port}`);
-  });
+async function startServer(port: number = Number(process.env.PORT)) {
+  try {
+    await setupDatabase();
+    app.listen(port, () => {
+      logger.info(`Server running on port: ${port}`);
+    });
+  } catch (err) {
+    logger.error('Failed to start server:', err);
+    process.exit(1);
+  }
 }
 
 if (require.main === module) {
