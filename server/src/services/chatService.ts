@@ -2,8 +2,8 @@ import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 import { FileService } from './fileService';
-import { Conversation } from '../models/conversation';
 import { Message } from '../models/message';
+import { EmbeddingModel } from 'openai/resources/embeddings';
 
 export class ChatService {
   public fileService: FileService;
@@ -20,38 +20,30 @@ export class ChatService {
   }
 
   async get(): Promise<Message[]> {
-    try {
-      return await this.getAllMessages();
-    } catch (err) {
-      console.error('Error in get:', err);
-      throw new Error('Failed to get messages');
-    }
+    const db = this.db;
+    return new Promise((resolve, reject) => {
+      try {
+        db.all(
+          'SELECT messageId, sender, text, createdAt as createdAt FROM Messages ORDER BY messageId ASC',
+          (err: Error | null, rows: Message[]) => {
+            if (err) {
+              console.error('DB error in getAllMessages:', err);
+              return reject(err);
+            }
+            resolve(rows);
+          }
+        );
+      } catch (err) {
+        console.error('Exception in getAllMessages:', err);
+        reject(err);
+      }
+    });
   }
 
-  async getLlmResponse(userMessage: string, context: string[]): Promise<string> {
-    // Integrate with OpenAI Chat API
-    try {
-      const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: 'You are a helpful assistant.' },
-        ...context.map((c) => ({ role: 'user', content: c }) as ChatCompletionMessageParam),
-        { role: 'user', content: userMessage },
-      ];
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages,
-        max_tokens: 512,
-      });
-      return response.choices[0].message?.content || '';
-    } catch (err) {
-      console.error('OpenAI API error:', err);
-      return 'Error: Unable to get response from LLM.';
-    }
-  }
-
-  async getEmbedding(text: string): Promise<number[]> {
+  private async getEmbedding(text: string): Promise<number[]> {
     try {
       const response = await this.openai.embeddings.create({
-        model: 'text-embedding-ada-002',
+        model: process.env.OPENAI_EMBEDDING_MODEL as (string & {}) | EmbeddingModel,
         input: text,
       });
       return response.data[0].embedding;
@@ -61,7 +53,7 @@ export class ChatService {
     }
   }
 
-  async getRelevantChunks(query: string, k: number = 3): Promise<string[]> {
+  private async getRelevantChunks(query: string, k: number = 3): Promise<string[]> {
     try {
       // Get embedding for the query
       const embedding = await this.getEmbedding(query);
@@ -76,77 +68,6 @@ export class ChatService {
     } catch (err) {
       console.error('Error in getRelevantChunks:', err);
       throw new Error('Failed to get relevant chunks');
-    }
-  }
-
-  // Combines RAG context and conversation history for the LLM call
-  public async chatWithRagAndHistory(
-    userPrompt: string,
-    conversationHistory: { role: string; content: string }[] = [],
-    k: number = 3
-  ): Promise<string> {
-    try {
-      const contextChunks = await this.getRelevantChunks(userPrompt, k);
-      const contextMessage = `Context:\n${contextChunks.join('\n---\n')}`;
-      const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: 'You are a helpful assistant.' },
-        { role: 'system', content: contextMessage },
-        ...conversationHistory.map((m) => ({
-          role: (['user', 'assistant', 'system'].includes(m.role) ? m.role : 'user') as
-            | 'user'
-            | 'assistant'
-            | 'system',
-          content: m.content,
-        })),
-        { role: 'user', content: userPrompt },
-      ];
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages,
-        max_tokens: 512,
-      });
-      return response.choices[0].message?.content || '';
-    } catch (err) {
-      console.error('Error in chatWithRagAndHistory:', err);
-      throw new Error('Failed to get chat response');
-    }
-  }
-
-  // Streams RAG+history chat completions incrementally using OpenAI's streaming API
-  public async streamChatWithRagAndHistory(
-    userPrompt: string,
-    conversationHistory: { role: string; content: string }[] = [],
-    k: number = 3,
-    onToken: (token: string) => void
-  ): Promise<void> {
-    try {
-      const contextChunks = await this.getRelevantChunks(userPrompt, k);
-      const contextMessage = `Context:\n${contextChunks.join('\n---\n')}`;
-      const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: 'You are a helpful assistant.' },
-        { role: 'system', content: contextMessage },
-        ...conversationHistory.map((m) => ({
-          role: (['user', 'assistant', 'system'].includes(m.role) ? m.role : 'user') as
-            | 'user'
-            | 'assistant'
-            | 'system',
-          content: m.content,
-        })),
-        { role: 'user', content: userPrompt },
-      ];
-      const stream = await this.openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages,
-        max_tokens: 512,
-        stream: true,
-      });
-      for await (const chunk of stream) {
-        const content = chunk.choices?.[0]?.delta?.content;
-        if (content) onToken(content);
-      }
-    } catch (err) {
-      console.error('Error in streamChatWithRagAndHistory:', err);
-      throw new Error('Failed to stream chat response');
     }
   }
 
@@ -172,28 +93,75 @@ export class ChatService {
     });
   }
 
-  async getAllMessages(): Promise<Message[]> {
-    const db = this.db;
-    return new Promise((resolve, reject) => {
-      try {
-        db.all(
-          'SELECT messageId, sender, text, createdAt as createdAt FROM Messages ORDER BY messageId ASC',
-          (err: Error | null, rows: Message[]) => {
-            if (err) {
-              console.error('DB error in getAllMessages:', err);
-              return reject(err);
-            }
-            resolve(rows);
-          }
-        );
-      } catch (err) {
-        console.error('Exception in getAllMessages:', err);
-        reject(err);
-      }
-    });
+  private createFileContextMessage(fileContent: string): ChatCompletionMessageParam {
+    return {
+      role: 'file' as any, // OpenAI API only allows 'system', 'user', 'assistant', but we use this internally
+      content:
+        '[File Context]\n' +
+        fileContent +
+        '\n[End of File Context]\n' +
+        '\nDo not respond to this message. Use it only as context for answering user questions.'
+    };
   }
 
-  async clearAllMessages(): Promise<void> {
+  public async streamChat(
+    userPrompt: string,
+    conversationHistory: { role: string; content: string }[] = [],
+    k: number = 3,
+    onToken: (token: string) => void
+  ): Promise<void> {
+    let fileContextInjected = false;
+    let fileContent: string | undefined = undefined;
+    let historyArr = Array.isArray(conversationHistory) ? conversationHistory : [];
+    let fileContextMessage: ChatCompletionMessageParam | undefined = undefined;
+    if ((!historyArr || historyArr.length === 0)) {
+      const docs = await this.fileService.listUploadedDocuments();
+      if (docs && docs.length > 0) {
+        const latestFile = docs[0].fileName;
+        fileContent = await this.fileService.getFullDocumentText(latestFile);
+        fileContextInjected = !!fileContent;
+        if (fileContent) {
+          fileContextMessage = this.createFileContextMessage(fileContent);
+        }
+      }
+    }
+    const contextChunks = await this.getRelevantChunks(userPrompt, k);
+    const contextMessage = `Context:\n${contextChunks.join('\n---\n')}`;
+    const messages: ChatCompletionMessageParam[] = [
+      { role: 'system', content: 'You are a helpful assistant.' },
+      { role: 'system', content: 'If you see a message with role "file", do not respond to it. Use it only as context for answering user questions.' },
+      ...(fileContextMessage ? [fileContextMessage] : []),
+      { role: 'system', content: contextMessage },
+      ...historyArr.map((m) => ({
+        role: (['user', 'assistant', 'system'].includes(m.role) ? m.role : 'user') as 'user' | 'assistant' | 'system',
+        content: m.content,
+      })),
+      { role: 'user', content: userPrompt },
+    ];
+    if (fileContextInjected) {
+      // Fallback to non-streaming single response
+      const response = await this.openai.chat.completions.create({
+        model: process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo',
+        messages,
+        max_tokens: 512,
+      });
+      onToken(response.choices[0].message?.content || '');
+      return;
+    }
+    // Otherwise, stream as usual
+    const stream = await this.openai.chat.completions.create({
+      model: process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo',
+      messages,
+      max_tokens: 512,
+      stream: true,
+    });
+    for await (const chunk of stream) {
+      const content = chunk.choices?.[0]?.delta?.content;
+      if (content) onToken(content);
+    }
+  }
+
+  async deleteAll(): Promise<void> {
     const db = this.db;
     return new Promise((resolve, reject) => {
       try {

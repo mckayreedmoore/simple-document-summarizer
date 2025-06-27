@@ -22,7 +22,7 @@ const ChatArea: React.FC = () => {
 
   useEffect(() => {
     // Fetch conversation on mount
-    fetch('/api/chat/get')
+    fetch('/api/conversation/get')
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.messages)) {
@@ -34,6 +34,10 @@ const ChatArea: React.FC = () => {
             }))
           );
         }
+        // Optionally, you could update DocumentList here if you want to pass documents directly
+        // if (Array.isArray(data.documents)) {
+        //   documentListRef.current?.setDocuments(data.documents);
+        // }
       });
   }, []);
 
@@ -70,7 +74,7 @@ const ChatArea: React.FC = () => {
       const history = [...messages, userMsg]
         .filter((m) => m.sender === 'user' || m.sender === 'bot')
         .map((m) => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }));
-      const res = await fetch('/api/chat/stream', {
+      const res = await fetch('/api/conversation/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: input, history }),
@@ -158,7 +162,7 @@ const ChatArea: React.FC = () => {
         const formData = new FormData();
         formData.append('file', file);
         try {
-          const response = await fetch('/api/chat/upload-file', {
+          const response = await fetch('/api/conversation/upload-file', {
             method: 'POST',
             body: formData,
           });
@@ -189,8 +193,7 @@ const ChatArea: React.FC = () => {
 
   const handleClearConversation = async () => {
     setLoading(true);
-    await fetch('/api/chat/clear', { method: 'POST' });
-    await fetch('/api/documents/clear', { method: 'POST' });
+    await fetch('/api/conversation/clear', { method: 'POST' });
     setMessages([]);
     documentListRef.current?.refresh();
     setLoading(false);

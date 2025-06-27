@@ -39,7 +39,7 @@ const DocumentList = forwardRef<DocumentListHandle, DocumentListProps>(
 
     const fetchDocuments = React.useCallback(() => {
       setLoading(true);
-      fetch('/api/documents/list')
+      fetch('/api/conversation/get')
         .then((res) => res.json())
         .then((data) => {
           setDocuments((docs) => {
