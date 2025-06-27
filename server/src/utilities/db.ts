@@ -9,39 +9,44 @@ export function getDatabaseInstance(): sqlite3.Database {
 export function setupDatabase(db: sqlite3.Database): Promise<void> {
   return new Promise((resolve, reject) => {
     db.serialize(() => {
+      db.run('PRAGMA foreign_keys = ON;');
       db.run(`
-        CREATE TABLE IF NOT EXISTS Documents (
-          documentId INTEGER PRIMARY KEY AUTOINCREMENT,
+        CREATE TABLE IF NOT EXISTS DocumentChunks (
+          chunkId INTEGER PRIMARY KEY AUTOINCREMENT,
           fileName TEXT,
           chunkIndex INTEGER,
           content TEXT
         );
       `);
-      db.run(`
+      db.run(
+        `
         CREATE TABLE IF NOT EXISTS DocumentVectors (
           documentVectorId INTEGER PRIMARY KEY AUTOINCREMENT,
           embedding TEXT,
-          documentId INTEGER
+          fkChunkId INTEGER NOT NULL,
+          FOREIGN KEY (fkChunkId) REFERENCES DocumentChunks(chunkId) ON DELETE CASCADE
         );
-      `, (err) => {
-        if (err) reject(err);
-        else {
-          // Add a table for chat messages
-          db.run(`
+      `,
+        (err) => {
+          if (err) reject(err);
+          else {
+            db.run(
+              `
             CREATE TABLE IF NOT EXISTS Messages (
               messageId INTEGER PRIMARY KEY AUTOINCREMENT,
               sender TEXT,
               text TEXT,
               createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
             );
-          `, (err) => {
-            if (err) reject(err);
-            else {
-              resolve();
-            }
-          });
+          `,
+              (err) => {
+                if (err) reject(err);
+                else resolve();
+              }
+            );
+          }
         }
-      });
+      );
     });
   });
 }

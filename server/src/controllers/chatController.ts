@@ -16,7 +16,10 @@ export const chatController = {
     try {
       // Save user message
       await chatService.saveMessage('user', prompt);
-      const response = await chatService.chatWithRagAndHistory(prompt, Array.isArray(history) ? history : []);
+      const response = await chatService.chatWithRagAndHistory(
+        prompt,
+        Array.isArray(history) ? history : []
+      );
       // Save bot response
       await chatService.saveMessage('bot', response);
       res.json({ response });

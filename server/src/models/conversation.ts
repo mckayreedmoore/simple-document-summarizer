@@ -1,5 +1,5 @@
 export interface Conversation {
-  id: number;
+  conversationId: number;
   messages: { role: string; content: string }[];
   createdAt: string;
 }

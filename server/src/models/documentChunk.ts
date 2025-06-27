@@ -1,6 +1,6 @@
 export interface DocumentChunk {
-  id: number;
-  docId: number;
+  chunkId: number;
+  fileName: string;
+  chunkIndex: number;
   content: string;
-  embedding?: number[];
 }

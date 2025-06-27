@@ -23,8 +23,8 @@ const ChatArea: React.FC = () => {
   useEffect(() => {
     // Fetch conversation on mount
     fetch('/api/chat/get')
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         if (Array.isArray(data.messages)) {
           setMessages(
             data.messages.map((m: { id: number; sender: 'user' | 'bot'; text: string }) => ({
@@ -68,8 +68,8 @@ const ChatArea: React.FC = () => {
     setInput('');
     try {
       const history = [...messages, userMsg]
-        .filter(m => m.sender === 'user' || m.sender === 'bot')
-        .map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }));
+        .filter((m) => m.sender === 'user' || m.sender === 'bot')
+        .map((m) => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }));
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -101,7 +101,7 @@ const ChatArea: React.FC = () => {
                   ...botMsg,
                   text: (botMsg.text || '') + data.token,
                 };
-                setMessages(prev => {
+                setMessages((prev) => {
                   const last = prev[prev.length - 1];
                   if (last && last.id === botMsg.id) {
                     return [...prev.slice(0, -1), botMsg];
@@ -118,7 +118,7 @@ const ChatArea: React.FC = () => {
                   ...botMsg,
                   text: data.error,
                 };
-                setMessages(prev => {
+                setMessages((prev) => {
                   const last = prev[prev.length - 1];
                   if (last && last.id === botMsg.id) {
                     return [...prev.slice(0, -1), botMsg];
@@ -147,42 +147,45 @@ const ChatArea: React.FC = () => {
     }
   };
 
-  const handleFileUpload = React.useCallback(async (files: FileList) => {
-    if (!files.length) return;
-    const file = files[0];
-    const tempId = 'uploading-' + Date.now() + '-' + Math.random();
-    documentListRef.current?.addUploading(tempId, file.name);
-    // Do not block UI
-    (async () => {
-      const formData = new FormData();
-      formData.append('file', file);
-      try {
-        const response = await fetch('/api/chat/upload-file', {
-          method: 'POST',
-          body: formData,
-        });
-        const data = await response.json();
-        if (data.success) {
-          // Refresh will replace the placeholder with the real doc
-          documentListRef.current?.refresh();
-        } else {
+  const handleFileUpload = React.useCallback(
+    async (files: FileList) => {
+      if (!files.length) return;
+      const file = files[0];
+      const tempId = 'uploading-' + Date.now() + '-' + Math.random();
+      documentListRef.current?.addUploading(tempId, file.name);
+      // Do not block UI
+      (async () => {
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+          const response = await fetch('/api/chat/upload-file', {
+            method: 'POST',
+            body: formData,
+          });
+          const data = await response.json();
+          if (data.success) {
+            // Refresh will replace the placeholder with the real doc
+            documentListRef.current?.refresh();
+          } else {
+            documentListRef.current?.removeUploading(tempId);
+            addMessage({
+              id: Date.now() + '-bot-file',
+              sender: 'bot',
+              text: `Failed to process file "${file.name}".`,
+            });
+          }
+        } catch {
           documentListRef.current?.removeUploading(tempId);
           addMessage({
-            id: Date.now() + '-bot-file',
+            id: Date.now() + '-bot-file-error',
             sender: 'bot',
-            text: `Failed to process file "${file.name}".`,
+            text: `File upload failed for "${file.name}".`,
           });
         }
-      } catch {
-        documentListRef.current?.removeUploading(tempId);
-        addMessage({
-          id: Date.now() + '-bot-file-error',
-          sender: 'bot',
-          text: `File upload failed for "${file.name}".`,
-        });
-      }
-    })();
-  }, [addMessage]);
+      })();
+    },
+    [addMessage]
+  );
 
   const handleClearConversation = async () => {
     setLoading(true);
@@ -222,14 +225,19 @@ const ChatArea: React.FC = () => {
   }, [handleFileUpload]);
 
   return (
-    <div className="flex items-center justify-center min-h-screen w-full bg-zinc-900">
-      <div ref={chatAreaRef} className={"flex flex-col bg-zinc-900 rounded-2xl shadow-lg border border-zinc-300 w-[70vw] h-[90vh] mx-4 md:mx-8 lg:mx-16 overflow-hidden relative " + (dragActive ? 'ring-4 ring-blue-400 ring-opacity-60' : '')}>
-        <div className="flex-1 overflow-y-auto p-8 flex flex-col min-h-0 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent scrollbar-corner-transparent">
-          <div className="flex-1 flex flex-col w-full min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent scrollbar-corner-transparent pr-4">
-            <div className="flex justify-end mb-2">
-            </div>
+    <div className='flex min-h-screen w-full items-center justify-center bg-zinc-900'>
+      <div
+        ref={chatAreaRef}
+        className={
+          'relative mx-4 flex h-[90vh] w-[70vw] flex-col overflow-hidden rounded-2xl border border-zinc-300 bg-zinc-900 shadow-lg md:mx-8 lg:mx-16 ' +
+          (dragActive ? 'ring-4 ring-blue-400 ring-opacity-60' : '')
+        }
+      >
+        <div className='scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent scrollbar-corner-transparent flex min-h-0 flex-1 flex-col overflow-y-auto p-8'>
+          <div className='scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent scrollbar-corner-transparent flex min-h-0 w-full flex-1 flex-col overflow-y-auto pr-4'>
+            <div className='mb-2 flex justify-end'></div>
             {messages.length === 0 && (
-              <div className="text-zinc-500 text-center mt-10 text-lg select-none">
+              <div className='mt-10 select-none text-center text-lg text-zinc-500'>
                 Chat with me
               </div>
             )}
@@ -239,10 +247,10 @@ const ChatArea: React.FC = () => {
                 className={`my-2 flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`rounded-xl px-5 py-3 max-w-3xl whitespace-pre-line shadow text-base break-words text-left ${
+                  className={`max-w-3xl whitespace-pre-line break-words rounded-xl px-5 py-3 text-left text-base shadow ${
                     msg.sender === 'user'
-                      ? 'bg-blue-600 text-white rounded-br-md ml-auto mr-1'
-                      : 'bg-zinc-800 text-zinc-100 border border-zinc-700 rounded-bl-md ml-1 mr-auto'
+                      ? 'ml-auto mr-1 rounded-br-md bg-blue-600 text-white'
+                      : 'ml-1 mr-auto rounded-bl-md border border-zinc-700 bg-zinc-800 text-zinc-100'
                   }`}
                 >
                   {msg.text}
@@ -252,13 +260,13 @@ const ChatArea: React.FC = () => {
             <div ref={bottomRef} />
           </div>
         </div>
-        <div className="flex flex-row items-end" style={{height: BOTTOM_BAR_HEIGHT}}>
-          <div className="w-[40%] min-w-[260px] max-w-[420px] h-full ">
+        <div className='flex flex-row items-end' style={{ height: BOTTOM_BAR_HEIGHT }}>
+          <div className='h-full w-[40%] min-w-[260px] max-w-[420px]'>
             <DocumentList ref={documentListRef} height={BOTTOM_BAR_HEIGHT} />
           </div>
-          <div className="flex-1 h-full">
-            <div className="border-t border-zinc-300 bg-zinc-900 p-4 h-full flex items-center">
-              <div className="w-full h-full flex items-center">
+          <div className='h-full flex-1'>
+            <div className='flex h-full items-center border-t border-zinc-300 bg-zinc-900 p-4'>
+              <div className='flex h-full w-full items-center'>
                 <ChatInput
                   value={input}
                   onChange={setInput}
@@ -267,7 +275,7 @@ const ChatArea: React.FC = () => {
                   onFileUpload={handleFileUpload}
                   dragActive={dragActive}
                   setDragActive={setDragActive}
-                  className="w-full h-full"
+                  className='h-full w-full'
                   onClearConversation={handleClearConversation}
                   clearLoading={loading}
                 />

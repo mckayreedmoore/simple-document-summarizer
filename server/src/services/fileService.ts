@@ -7,7 +7,6 @@ import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import { DocumentChunk } from '../models/documentChunk';
 
-
 export class FileService {
   public db;
   private openai;
@@ -69,23 +68,27 @@ export class FileService {
     }
   }
 
-  async storeChunk(fileName: string, chunkIndex: number, content: string, embedding: number[]): Promise<void> {
+  async storeChunk(
+    fileName: string,
+    chunkIndex: number,
+    content: string,
+    embedding: number[]
+  ): Promise<void> {
     const db = this.db;
     return new Promise((resolve, reject) => {
       try {
         db.run(
-          'INSERT INTO Documents (fileName, chunkIndex, content) VALUES (?, ?, ?)',
+          'INSERT INTO DocumentChunks (fileName, chunkIndex, content) VALUES (?, ?, ?)',
           [fileName, chunkIndex, content],
           function (this: any, err: Error | null) {
             if (err) {
-              console.error('DB error in storeChunk (Documents):', err);
+              console.error('DB error in storeChunk (DocumentChunks):', err);
               return reject(err);
             }
-            const documentId = this.lastID;
+            const chunkId = this.lastID;
             db.run(
-              'INSERT INTO DocumentVectors (embedding, documentId) VALUES (?, ?)',
-
-              [JSON.stringify(embedding), documentId],
+              'INSERT INTO DocumentVectors (embedding, fkChunkId) VALUES (?, ?)',
+              [JSON.stringify(embedding), chunkId],
               function (err: Error | null) {
                 if (err) {
                   console.error('DB error in storeChunk (DocumentVectors):', err);
@@ -103,22 +106,23 @@ export class FileService {
     });
   }
 
-  async getChunkById(docId: number): Promise<DocumentChunk> {
+  async getChunkById(chunkId: number): Promise<DocumentChunk> {
     const db = this.db;
     return new Promise((resolve, reject) => {
       try {
         db.get(
-          'SELECT documentId as id, documentId as docId, content FROM Documents WHERE documentId = ?',
-          [docId],
+          'SELECT chunkId, fileName, chunkIndex, content FROM DocumentChunks WHERE chunkId = ?',
+          [chunkId],
           (err: Error | null, row: any) => {
             if (err) {
               console.error('DB error in getChunkById:', err);
               return reject(err);
             }
             resolve({
-              id: row.id,
-              docId: row.docId,
-              content: row.content
+              chunkId: row.chunkId,
+              fileName: row.fileName,
+              chunkIndex: row.chunkIndex,
+              content: row.content,
             } as DocumentChunk);
           }
         );
@@ -129,29 +133,38 @@ export class FileService {
     });
   }
 
-  async querySimilarChunks(embedding: number[], k: number = 3): Promise<Pick<DocumentChunk, 'docId'>[]> {
+  async querySimilarChunks(
+    embedding: number[],
+    k: number = 3
+  ): Promise<{ fkChunkId: number }[]> {
     const db = this.db;
     try {
-      // Fetch all embeddings and docIds
-      const allVectors: { docId: number; embedding: string }[] = await new Promise((resolve, reject) => {
-        db.all('SELECT documentId as docId, embedding FROM DocumentVectors', (err: Error | null, rows: any[]) => {
-          if (err) {
-            console.error('DB error in querySimilarChunks:', err);
-            return reject(err);
-          }
-          resolve(rows);
-        });
-      });
+      // Fetch all embeddings and fkChunkIds
+      const allVectors: { fkChunkId: number; embedding: string }[] = await new Promise(
+        (resolve, reject) => {
+          db.all(
+            'SELECT fkChunkId, embedding FROM DocumentVectors',
+            (err: Error | null, rows: any[]) => {
+              if (err) {
+                console.error('DB error in querySimilarChunks:', err);
+                return reject(err);
+              }
+              resolve(rows);
+            }
+          );
+        }
+      );
       // Compute cosine similarity in JS using arrays
       const queryVec = embedding;
-      const scored = allVectors.map(row => {
+      const scored = allVectors.map((row) => {
         const vec = JSON.parse(row.embedding);
-        const similarity = vectorious.dot(queryVec, vec) / (vectorious.norm(queryVec) * vectorious.norm(vec));
-        return { docId: row.docId, similarity };
+        const similarity =
+          vectorious.dot(queryVec, vec) / (vectorious.norm(queryVec) * vectorious.norm(vec));
+        return { fkChunkId: row.fkChunkId, similarity };
       });
       // Sort by descending similarity (higher is more similar)
       scored.sort((a, b) => b.similarity - a.similarity);
-      return scored.slice(0, k).map(row => ({ docId: row.docId }));
+      return scored.slice(0, k).map((row) => ({ fkChunkId: row.fkChunkId }));
     } catch (err) {
       console.error('Error in querySimilarChunks:', err);
       throw new Error('Failed to query similar chunks');
@@ -167,8 +180,8 @@ export class FileService {
       const userEmbedding = embeddingResponse.data[0].embedding;
       const similarChunks = await this.querySimilarChunks(userEmbedding, chunkAmount);
       const contextChunks = [];
-      for (const { docId } of similarChunks) {
-        const chunk = await this.getChunkById(docId as number);
+      for (const { fkChunkId } of similarChunks) {
+        const chunk = await this.getChunkById(fkChunkId);
         contextChunks.push(chunk?.content);
       }
       return contextChunks;
@@ -218,12 +231,12 @@ export class FileService {
     }
   }
 
-  async listUploadedDocuments(): Promise<{ id: number, fileName: string }[]> {
+  async listUploadedDocuments(): Promise<{ id: number; fileName: string }[]> {
     const db = this.db;
     return new Promise((resolve, reject) => {
       try {
         db.all(
-          'SELECT documentId as id, fileName FROM Documents WHERE chunkIndex = 0 ORDER BY documentId DESC',
+          'SELECT chunkId as id, fileName FROM DocumentChunks WHERE chunkIndex = 0 ORDER BY chunkId DESC',
           (err: Error | null, rows: any[]) => {
             if (err) {
               console.error('DB error in listUploadedDocuments:', err);
@@ -248,9 +261,9 @@ export class FileService {
             console.error('DB error in clearAllDocuments (DocumentVectors):', err);
             return reject(err);
           }
-          db.run('DELETE FROM Documents', (err: Error | null) => {
+          db.run('DELETE FROM DocumentChunks', (err: Error | null) => {
             if (err) {
-              console.error('DB error in clearAllDocuments (Documents):', err);
+              console.error('DB error in clearAllDocuments (DocumentChunks):', err);
               return reject(err);
             }
             resolve();
@@ -280,4 +293,3 @@ export class FileService {
 // for the use of testing
 //const fileService = new FileService();
 //fileService.test3();
-

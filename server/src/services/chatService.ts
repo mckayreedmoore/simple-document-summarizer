@@ -33,7 +33,7 @@ export class ChatService {
     try {
       const messages: ChatCompletionMessageParam[] = [
         { role: 'system', content: 'You are a helpful assistant.' },
-        ...context.map((c) => ({ role: 'user', content: c } as ChatCompletionMessageParam)),
+        ...context.map((c) => ({ role: 'user', content: c }) as ChatCompletionMessageParam),
         { role: 'user', content: userMessage },
       ];
       const response = await this.openai.chat.completions.create({
@@ -69,8 +69,10 @@ export class ChatService {
       const results = await this.fileService.querySimilarChunks(embedding, k);
       if (!results || results.length === 0) return [];
       // Fetch the actual chunk content
-      const chunks = await Promise.all(results.map(r => this.fileService.getChunkById(r.docId)));
-      return chunks.map(c => c.content);
+      const chunks = await Promise.all(
+        results.map((r) => this.fileService.getChunkById(r.fkChunkId))
+      );
+      return chunks.map((c) => c.content);
     } catch (err) {
       console.error('Error in getRelevantChunks:', err);
       throw new Error('Failed to get relevant chunks');
@@ -78,16 +80,23 @@ export class ChatService {
   }
 
   // Combines RAG context and conversation history for the LLM call
-  public async chatWithRagAndHistory(userPrompt: string, conversationHistory: {role: string, content: string}[] = [], k: number = 3): Promise<string> {
+  public async chatWithRagAndHistory(
+    userPrompt: string,
+    conversationHistory: { role: string; content: string }[] = [],
+    k: number = 3
+  ): Promise<string> {
     try {
       const contextChunks = await this.getRelevantChunks(userPrompt, k);
       const contextMessage = `Context:\n${contextChunks.join('\n---\n')}`;
       const messages: ChatCompletionMessageParam[] = [
         { role: 'system', content: 'You are a helpful assistant.' },
         { role: 'system', content: contextMessage },
-        ...conversationHistory.map(m => ({
-          role: (['user', 'assistant', 'system'].includes(m.role) ? m.role : 'user') as 'user' | 'assistant' | 'system',
-          content: m.content
+        ...conversationHistory.map((m) => ({
+          role: (['user', 'assistant', 'system'].includes(m.role) ? m.role : 'user') as
+            | 'user'
+            | 'assistant'
+            | 'system',
+          content: m.content,
         })),
         { role: 'user', content: userPrompt },
       ];
@@ -104,16 +113,24 @@ export class ChatService {
   }
 
   // Streams RAG+history chat completions incrementally using OpenAI's streaming API
-  public async streamChatWithRagAndHistory(userPrompt: string, conversationHistory: {role: string, content: string}[] = [], k: number = 3, onToken: (token: string) => void): Promise<void> {
+  public async streamChatWithRagAndHistory(
+    userPrompt: string,
+    conversationHistory: { role: string; content: string }[] = [],
+    k: number = 3,
+    onToken: (token: string) => void
+  ): Promise<void> {
     try {
       const contextChunks = await this.getRelevantChunks(userPrompt, k);
       const contextMessage = `Context:\n${contextChunks.join('\n---\n')}`;
       const messages: ChatCompletionMessageParam[] = [
         { role: 'system', content: 'You are a helpful assistant.' },
         { role: 'system', content: contextMessage },
-        ...conversationHistory.map(m => ({
-          role: (['user', 'assistant', 'system'].includes(m.role) ? m.role : 'user') as 'user' | 'assistant' | 'system',
-          content: m.content
+        ...conversationHistory.map((m) => ({
+          role: (['user', 'assistant', 'system'].includes(m.role) ? m.role : 'user') as
+            | 'user'
+            | 'assistant'
+            | 'system',
+          content: m.content,
         })),
         { role: 'user', content: userPrompt },
       ];

@@ -61,25 +61,25 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   return (
     <div
-      className={`relative flex items-center gap-2 w-full ${className || ''}`}
+      className={`relative flex w-full items-center gap-2 ${className || ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       style={{ height: '100%' }}
     >
       <input
-        type="text"
-        className="flex-1 rounded-lg border border-zinc-400 bg-zinc-800 text-zinc-100 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 transition text-base h-full"
-        placeholder="Type your message..."
+        type='text'
+        className='h-full flex-1 rounded-lg border border-zinc-400 bg-zinc-800 px-4 py-2 text-base text-zinc-100 transition focus:outline-none focus:ring-2 focus:ring-blue-500'
+        placeholder='Type your message...'
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         disabled={disabled}
         style={{ height: '100%' }}
       />
-      <div className="flex items-center gap-2 h-full">
+      <div className='flex h-full items-center gap-2'>
         <button
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg transition disabled:opacity-50 h-full"
+          className='h-full rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50'
           onClick={onSend}
           disabled={disabled}
           style={{ height: '100%' }}
@@ -87,34 +87,45 @@ const ChatInput: React.FC<ChatInputProps> = ({
           Send
         </button>
         <button
-          className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition disabled:opacity-50 h-full"
+          className='h-full rounded-lg bg-red-600 px-4 py-2 font-semibold text-white transition hover:bg-red-700 disabled:opacity-50'
           onClick={onClearConversation}
           disabled={disabled || clearLoading}
           style={{ height: '100%' }}
-          title="Clear all chat messages"
+          title='Clear all chat messages'
         >
           Clear
         </button>
         <input
-          type="file"
+          type='file'
           ref={fileInputRef}
           style={{ display: 'none' }}
           onChange={handleFileChange}
         />
         <button
-          className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200 font-semibold px-4 py-2 rounded-lg transition disabled:opacity-50 h-full"
+          className='h-full rounded-lg bg-zinc-700 px-4 py-2 font-semibold text-zinc-200 transition hover:bg-zinc-600 disabled:opacity-50'
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled}
           style={{ height: '100%' }}
-          title="Upload file"
+          title='Upload file'
         >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mx-auto">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16" />
+          <svg
+            xmlns='http://www.w3.org/2000/svg'
+            fill='none'
+            viewBox='0 0 24 24'
+            strokeWidth={1.5}
+            stroke='currentColor'
+            className='mx-auto h-5 w-5'
+          >
+            <path
+              strokeLinecap='round'
+              strokeLinejoin='round'
+              d='M12 16V4m0 0l-4 4m4-4l4 4M4 20h16'
+            />
           </svg>
         </button>
       </div>
       {dragActive && (
-        <div className="absolute inset-0 bg-blue-400 bg-opacity-20 rounded-lg pointer-events-none z-10" />
+        <div className='pointer-events-none absolute inset-0 z-10 rounded-lg bg-blue-400 bg-opacity-20' />
       )}
     </div>
   );
