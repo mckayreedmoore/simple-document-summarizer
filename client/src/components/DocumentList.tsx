@@ -14,15 +14,15 @@ interface DocumentListProps {
 }
 
 const DocumentList = forwardRef<DocumentListHandle, DocumentListProps>(({ onSelect, className, height }, ref) => {
-  const [documents, setDocuments] = useState<{ id: number|string, file_name: string, uploading?: boolean }[]>([]);
+  const [documents, setDocuments] = useState<{ id: number|string, fileName: string, uploading?: boolean }[]>([]);
   const [loading, setLoading] = useState(true);
 
   const addUploading = React.useCallback((tempId: string, fileName: string) => {
-    setDocuments(docs => [{ id: tempId, file_name: fileName, uploading: true }, ...docs]);
+    setDocuments(docs => [{ id: tempId, fileName, uploading: true }, ...docs]);
   }, []);
 
   const markUploaded = React.useCallback((tempId: string, newId: number, newName: string) => {
-    setDocuments(docs => docs.map(d => d.id === tempId ? { id: newId, file_name: newName } : d));
+    setDocuments(docs => docs.map(d => d.id === tempId ? { id: newId, fileName: newName } : d));
   }, []);
 
   const removeUploading = React.useCallback((tempId: string) => {
@@ -35,8 +35,8 @@ const DocumentList = forwardRef<DocumentListHandle, DocumentListProps>(({ onSele
       .then(res => res.json())
       .then(data => {
         setDocuments(docs => {
-          const realDocs = data.documents || [];
-          const uploading = docs.filter(d => d.uploading && !realDocs.some((r: { file_name: string, id: number }) => r.file_name === d.file_name || r.id === d.id));
+          const realDocs = (data.documents || []).map((doc: { id: number; fileName?: string; file_name?: string }) => ({ ...doc, fileName: doc.fileName ?? doc.file_name }));
+          const uploading = docs.filter(d => d.uploading && !realDocs.some((r: { id: number|string; fileName: string }) => r.fileName === d.fileName || r.id === d.id));
           return [...uploading, ...realDocs];
         });
         setLoading(false);
@@ -58,8 +58,7 @@ const DocumentList = forwardRef<DocumentListHandle, DocumentListProps>(({ onSele
       throw new Error('Upload failed');
     }
     const result = await response.json();
-    console.log('Upload result for', file.name, ':', result);
-    return result; // Should return { id, file_name }
+    return { ...result, fileName: result.fileName ?? result.file_name };
   }, []);
 
   // Drag-and-drop handler for single file upload
@@ -72,7 +71,7 @@ const DocumentList = forwardRef<DocumentListHandle, DocumentListProps>(({ onSele
     addUploading(tempId, file.name);
     try {
       const result = await uploadFile(file);
-      markUploaded(tempId, result.id, result.file_name);
+      markUploaded(tempId, result.id, result.fileName);
     } catch {
       removeUploading(tempId);
     }
@@ -116,11 +115,11 @@ const DocumentList = forwardRef<DocumentListHandle, DocumentListProps>(({ onSele
               >
                 <span
                   className="flex-1 text-zinc-100 truncate pr-2 block min-w-0 text-sm relative"
-                  title={doc.file_name}
-                  onClick={() => onSelect?.(doc.file_name)}
+                  title={doc.fileName}
+                  onClick={() => onSelect?.(doc.fileName)}
                   style={{ cursor: onSelect ? 'pointer' : 'default' }}
                 >
-                  {doc.file_name}
+                  {doc.fileName}
                   {doc.uploading && (
                     <span className="absolute inset-0 flex items-center justify-center bg-black/40" style={{ borderRadius: 8 }}>
                       <svg className="animate-spin" width="22" height="22" viewBox="0 0 22 22">

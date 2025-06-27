@@ -2,17 +2,14 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import validateEnv from './utilities/validateEnv';
 dotenv.config();
+validateEnv();
+
 
 import router from './api'
 
-
 const app = express();
-
-// Check for OpenAI API key
-if (!process.env.OPENAI_API_KEY) {
-    throw new Error('Missing required environment variable: OPENAI_API_KEY');
-}
 
 app.use(helmet());
 app.use(cors());

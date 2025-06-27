@@ -2,18 +2,12 @@ import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 import { FileService } from './fileService';
-
-export interface Conversation {
-  id: number;
-  messages: { role: string; content: string }[];
-  created_at: string;
-}
+import { Conversation } from '../models/conversation';
+import { Message } from '../models/message';
 
 export class ChatService {
   public fileService: FileService;
   private openai: OpenAI;
-  private conversations: Conversation[] = [];
-  private nextId = 1;
   private db;
 
   constructor() {
@@ -25,7 +19,7 @@ export class ChatService {
     this.db = this.fileService.db;
   }
 
-  async get(): Promise<{ id: number; sender: string; text: string; created_at: string }[]> {
+  async get(): Promise<Message[]> {
     try {
       return await this.getAllMessages();
     } catch (err) {
@@ -75,7 +69,7 @@ export class ChatService {
       const results = await this.fileService.querySimilarChunks(embedding, k);
       if (!results || results.length === 0) return [];
       // Fetch the actual chunk content
-      const chunks = await Promise.all(results.map(r => this.fileService.getChunkById(r.doc_id)));
+      const chunks = await Promise.all(results.map(r => this.fileService.getChunkById(r.docId)));
       return chunks.map(c => c.content);
     } catch (err) {
       console.error('Error in getRelevantChunks:', err);
@@ -144,7 +138,7 @@ export class ChatService {
     return new Promise((resolve, reject) => {
       try {
         db.run(
-          'INSERT INTO chat_messages (sender, text) VALUES (?, ?)',
+          'INSERT INTO Messages (sender, text) VALUES (?, ?)',
           [sender, text],
           function (err: Error | null) {
             if (err) {
@@ -161,13 +155,13 @@ export class ChatService {
     });
   }
 
-  async getAllMessages(): Promise<{ id: number; sender: string; text: string; created_at: string }[]> {
+  async getAllMessages(): Promise<Message[]> {
     const db = this.db;
     return new Promise((resolve, reject) => {
       try {
         db.all(
-          'SELECT id, sender, text, created_at FROM chat_messages ORDER BY id ASC',
-          (err: Error | null, rows: any[]) => {
+          'SELECT messageId, sender, text, createdAt as createdAt FROM Messages ORDER BY messageId ASC',
+          (err: Error | null, rows: Message[]) => {
             if (err) {
               console.error('DB error in getAllMessages:', err);
               return reject(err);
@@ -186,7 +180,7 @@ export class ChatService {
     const db = this.db;
     return new Promise((resolve, reject) => {
       try {
-        db.run('DELETE FROM chat_messages', (err: Error | null) => {
+        db.run('DELETE FROM Messages', (err: Error | null) => {
           if (err) {
             console.error('DB error in clearAllMessages:', err);
             return reject(err);

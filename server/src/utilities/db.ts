@@ -10,28 +10,29 @@ export function setupDatabase(db: sqlite3.Database): Promise<void> {
   return new Promise((resolve, reject) => {
     db.serialize(() => {
       db.run(`
-        CREATE TABLE IF NOT EXISTS documents (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          file_name TEXT,
-          chunk_index INTEGER,
+        CREATE TABLE IF NOT EXISTS Documents (
+          documentId INTEGER PRIMARY KEY AUTOINCREMENT,
+          fileName TEXT,
+          chunkIndex INTEGER,
           content TEXT
         );
       `);
       db.run(`
-        CREATE TABLE IF NOT EXISTS document_vectors (
+        CREATE TABLE IF NOT EXISTS DocumentVectors (
+          documentVectorId INTEGER PRIMARY KEY AUTOINCREMENT,
           embedding TEXT,
-          doc_id INTEGER
+          documentId INTEGER
         );
       `, (err) => {
         if (err) reject(err);
         else {
           // Add a table for chat messages
           db.run(`
-            CREATE TABLE IF NOT EXISTS chat_messages (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
+            CREATE TABLE IF NOT EXISTS Messages (
+              messageId INTEGER PRIMARY KEY AUTOINCREMENT,
               sender TEXT,
               text TEXT,
-              created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+              createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
             );
           `, (err) => {
             if (err) reject(err);

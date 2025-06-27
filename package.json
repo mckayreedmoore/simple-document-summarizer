@@ -4,9 +4,20 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "concurrently -n CLIENT,SERVER -c blue,magenta \"npm run build:client\" \"npm run build:server\"",
+    "build:client": "npm --prefix ./client run build",
+    "build:server": "npm --prefix ./server run build",
+    "dev": "concurrently -n CLIENT,SERVER -c blue,magenta \"npm run dev:client\" \"npm run dev:server\"",
+    "dev:client": "npm --prefix ./client run dev",
+    "dev:server": "npm --prefix ./server run dev",
+    "typecheck": "concurrently -n CLIENT,SERVER -c blue,magenta \"npm run typecheck:client\" \"npm run typecheck:server\"",
+    "typecheck:client": "tsc --noEmit -p ./client/tsconfig.json",
+    "typecheck:server": "tsc --noEmit -p ./server/tsconfig.json"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  }
 }

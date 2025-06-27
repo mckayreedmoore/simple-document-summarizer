@@ -137,3 +137,5 @@ dist
 
 # ignore sqlite database
 summarizer.db
+
+/dist
