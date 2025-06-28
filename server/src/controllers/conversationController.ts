@@ -8,7 +8,7 @@ import path from 'path';
 const messageService = new MessageService();
 const fileService = new FileService();
 
-const ALLOWED_FILE_TYPES = [
+const ALLOWED_MIME_TYPES = [
   'text/plain',
   'application/pdf',
   'text/csv',
@@ -34,8 +34,8 @@ export const conversationController = {
       return res.status(400).json({ error: 'No file uploaded' });
     }
     // File type and size validation
-    if (!ALLOWED_FILE_TYPES.includes(req.file.mimetype)) {
-      logger.warn(`Rejected file upload: invalid type ${req.file.mimetype}`);
+    if (!ALLOWED_MIME_TYPES.includes(req.file.mimetype)) {
+      logger.warn(`Rejected file upload: invalid MIME type ${req.file.mimetype}`);
       return res.status(400).json({ error: 'Invalid file type' });
     }
     if (req.file.size > Number(process.env.FILE_SIZE_MAX_MB) * 1024 * 1024) {
@@ -44,6 +44,7 @@ export const conversationController = {
         .status(400)
         .json({ error: `File too large (max ${process.env.FILE_SIZE_MAX_MB}MB)` });
     }
+
     // Sanitize file name: remove path, allow only safe chars, limit length
     const originalName = path.basename(req.file.originalname);
     const safeFileName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 128);

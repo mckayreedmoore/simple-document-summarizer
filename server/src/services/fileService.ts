@@ -126,6 +126,49 @@ export class FileService {
     throw new Error('Unsupported file extension');
   }
 
+  private async insertChunksAndGetIds(fileName: string, chunks: string[]): Promise<number[]> {
+    const chunkIds: number[] = [];
+    for (let idx = 0; idx < chunks.length; idx++) {
+      const chunkId: number = await new Promise((resolve, reject) => {
+        this.db.run(
+          'INSERT INTO DocumentChunks (fileName, chunkIndex, content) VALUES (?, ?, ?)',
+          [fileName, idx, chunks[idx]],
+          function (err: Error | null) {
+            if (err) {
+              logger.error('DB error in processFile (insert chunk):', err);
+              return reject(err);
+            }
+            resolve((this as any).lastID);
+          }
+        );
+      });
+      chunkIds.push(chunkId);
+    }
+    return chunkIds;
+  }
+
+  private async processEmbedding(chunkIdx: number, chunkId: number, chunkData: string): Promise<void> {
+    try {
+      const embedding = await this.getEmbedding(chunkData);
+      await new Promise<void>((resolve, reject) => {
+        this.db.run(
+          'INSERT INTO DocumentVectors (embedding, fkChunkId) VALUES (?, ?)',
+
+          [JSON.stringify(embedding), chunkId],
+          (err: Error | null) => {
+            if (err) {
+              logger.error('DB error in processFile (insert embedding):', err);
+              return reject(err);
+            }
+            resolve();
+          }
+        );
+      });
+    } catch (err) {
+      logger.error('Error getting/storing embedding for chunk:', err);
+    }
+  }
+
   async processFile(fileBuffer: Buffer, fileName: string): Promise<void> {
     try {
       logger.info(`Processing file: ${fileName}`);
@@ -137,63 +180,38 @@ export class FileService {
         chunks.push(text.slice(i, i + chunkSize));
       }
 
-      // Process chunks in parallel with a concurrency limit
-      const concurrencyLimit = Number(process.env.FILE_CONCURRENCY_PROCESS_LIMIT);
-      let idx = 0;
-      const self = this;
-      async function processBatch() {
-        const batch = [];
-        for (let i = 0; i < concurrencyLimit && idx < chunks.length; i++) {
-          const chunkIndex = idx;
-          const chunk = chunks[chunkIndex];
-          idx++;
-          batch.push(
-            (async (chunkIdx, chunkData) => {
-              // Store chunk in DocumentChunks
-              const chunkId: number = await new Promise((resolve, reject) => {
-                self.db.run(
-                  'INSERT INTO DocumentChunks (fileName, chunkIndex, content) VALUES (?, ?, ?)',
-                  [fileName, chunkIdx, chunkData],
-                  function (err: Error | null) {
-                    if (err) {
-                      logger.error('DB error in processFile (insert chunk):', err);
-                      return reject(err);
-                    }
-                    // Get the inserted chunkId
-                    resolve((this as any).lastID);
-                  }
-                );
-              });
-              // Get embedding for the chunk
-              try {
-                const embedding = await self.getEmbedding(chunkData);
-                // Store embedding in DocumentVectors
-                await new Promise<void>((resolve, reject) => {
-                  self.db.run(
-                    'INSERT INTO DocumentVectors (embedding, fkChunkId) VALUES (?, ?)',
+      const chunkIds = await this.insertChunksAndGetIds(fileName, chunks);
 
-                    [JSON.stringify(embedding), chunkId],
-                    (err: Error | null) => {
-                      if (err) {
-                        logger.error('DB error in processFile (insert embedding):', err);
-                        return reject(err);
-                      }
-                      resolve();
-                    }
-                  );
-                });
-              } catch (err) {
-                logger.error('Error getting/storing embedding for chunk:', err);
-              }
-            })(chunkIndex, chunk)
-          );
+      const concurrencyLimit = Number(process.env.FILE_CONCURRENCY_PROCESS_LIMIT);
+      const queue = chunks.map((chunk, idx) => ({ idx, chunkId: chunkIds[idx], chunkData: chunk }));
+      
+      await new Promise<void>((resolve, reject) => {
+        let finished = 0;
+        const total = queue.length;
+        let activeCount = 0;
+        let queueIndex = 0;
+        const next = () => {
+          if (queueIndex >= total) {
+            if (activeCount === 0) resolve();
+            return;
+          }
+          logger.info('Current index: ' + queueIndex);
+          const item = queue[queueIndex++];
+          activeCount++;
+          this.processEmbedding(item.idx, item.chunkId, item.chunkData)
+            .then(() => {
+              activeCount--;
+              finished++;
+              next(); 
+            })
+            .catch(reject);
+        };
+        const initial = Math.min(concurrencyLimit, total);
+        for (let i = 0; i < initial; i++) {
+          next();
         }
-        await Promise.all(batch);
-      }
-      while (idx < chunks.length) {
-        await processBatch();
-      }
-      logger.info(`Finished processing file: ${fileName}`);
+      });
+
     } catch (err) {
       logger.error('Error in processFile:', err);
       throw err;
