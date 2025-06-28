@@ -16,10 +16,12 @@
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "helmet": "^8.1.0",
+    "iconv-lite": "^0.6.3",
     "mammoth": "^1.9.1",
     "multer": "^2.0.1",
     "openai": "^5.7.0",
     "pdf-parse": "^1.1.1",
+    "rtf-stream-parser": "^3.8.0",
     "sqlite3": "^5.1.7",
     "vectorious": "^6.1.14",
     "winston": "^3.17.0"

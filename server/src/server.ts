@@ -20,7 +20,7 @@ app.use(express.json());
 
 app.use('/api', router);
 
-// Global error handler 
+// Global error handler
 app.use(errorHandler);
 
 async function startServer(port: number = Number(process.env.PORT)) {

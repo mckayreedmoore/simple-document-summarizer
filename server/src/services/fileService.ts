@@ -3,7 +3,6 @@ import path from 'path';
 import { getDatabaseInstance } from '../utilities/db';
 import OpenAI from 'openai';
 import pdfParse from 'pdf-parse';
-import mammoth from 'mammoth';
 import { logger } from '../utilities/logger';
 
 export class FileService {
@@ -16,23 +15,17 @@ export class FileService {
   }
 
   async listUploadedDocuments(): Promise<{ id: number; fileName: string }[]> {
-    const db = this.db;
     return new Promise((resolve, reject) => {
-      try {
-        db.all(
-          'SELECT chunkId as id, fileName FROM DocumentChunks WHERE chunkIndex = 0 ORDER BY chunkId DESC',
-          (err: Error | null, rows: any[]) => {
-            if (err) {
-              logger.error('DB error in listUploadedDocuments:', err);
-              return reject(err);
-            }
-            resolve(rows);
+      this.db.all(
+        'SELECT chunkId as id, fileName FROM DocumentChunks WHERE chunkIndex = 0 ORDER BY chunkId DESC',
+        (err: Error | null, rows: any[]) => {
+          if (err) {
+            logger.error('DB error in listUploadedDocuments:', err);
+            return reject(err);
           }
-        );
-      } catch (err) {
-        logger.error('Exception in listUploadedDocuments:', err);
-        reject(err);
-      }
+          resolve(rows);
+        }
+      );
     });
   }
 
@@ -40,11 +33,10 @@ export class FileService {
     embedding: number[],
     k: number = 3
   ): Promise<{ fkChunkId: number }[]> {
-    const db = this.db;
     try {
       const allVectors: { fkChunkId: number; embedding: string }[] = await new Promise(
         (resolve, reject) => {
-          db.all(
+          this.db.all(
             'SELECT fkChunkId, embedding FROM DocumentVectors',
             (err: Error | null, rows: any[]) => {
               if (err) {
@@ -73,67 +65,71 @@ export class FileService {
   }
 
   async getChunkById(chunkId: number): Promise<any> {
-    const db = this.db;
     return new Promise((resolve, reject) => {
-      try {
-        db.get(
-          'SELECT chunkId, fileName, chunkIndex, content FROM DocumentChunks WHERE chunkId = ?',
-          [chunkId],
-          (err: Error | null, row: any) => {
-            if (err) {
-              logger.error('DB error in getChunkById:', err);
-              return reject(err);
-            }
-            resolve(row);
+      this.db.get(
+        'SELECT chunkId, fileName, chunkIndex, content FROM DocumentChunks WHERE chunkId = ?',
+        [chunkId],
+        (err: Error | null, row: any) => {
+          if (err) {
+            logger.error('DB error in getChunkById:', err);
+            return reject(err);
           }
-        );
-      } catch (err) {
-        logger.error('Exception in getChunkById:', err);
-        reject(err);
-      }
+          resolve(row);
+        }
+      );
     });
   }
 
   async getFullDocumentText(fileName: string): Promise<string> {
-    const db = this.db;
     return new Promise((resolve, reject) => {
-      try {
-        db.all(
-          'SELECT content FROM DocumentChunks WHERE fileName = ? ORDER BY chunkIndex ASC',
-          [fileName],
-          (err: Error | null, rows: any[]) => {
-            if (err) {
-              logger.error('DB error in getFullDocumentText:', err);
-              return reject(err);
-            }
-            const fullText = rows.map((row) => row.content).join('');
-            resolve(fullText);
+      this.db.all(
+        'SELECT content FROM DocumentChunks WHERE fileName = ? ORDER BY chunkIndex ASC',
+        [fileName],
+        (err: Error | null, rows: any[]) => {
+          if (err) {
+            logger.error('DB error in getFullDocumentText:', err);
+            return reject(err);
           }
-        );
-      } catch (err) {
-        logger.error('Exception in getFullDocumentText:', err);
-        reject(err);
-      }
+          const fullText = rows.map((row) => row.content).join('');
+          resolve(fullText);
+        }
+      );
     });
+  }
+
+  private async extractTextFromFile(fileBuffer: Buffer, fileName: string): Promise<string> {
+    const ext = path.extname(fileName).toLowerCase();
+
+    // PDF
+    if (ext === '.pdf') {
+      if (fileBuffer.toString('utf-8', 0, 4) !== '%PDF') {
+        logger.warn('File content does not match PDF signature');
+        throw new Error('File content does not match PDF signature');
+      }
+      const data = await pdfParse(fileBuffer);
+      return data.text;
+    }
+
+    // DOCX
+    if (ext === '.docx') {
+      const mammoth = require('mammoth');
+      const result = await mammoth.extractRawText({ buffer: fileBuffer });
+      return result.value;
+    }
+
+    // Plain text types
+    if (['.txt', '.md', '.json', '.log', '.csv'].includes(ext)) {
+      return fileBuffer.toString('utf-8');
+    }
+
+    logger.warn('Unsupported file extension in extractTextFromFile');
+    throw new Error('Unsupported file extension');
   }
 
   async processFile(fileBuffer: Buffer, fileName: string): Promise<void> {
     try {
       logger.info(`Processing file: ${fileName}`);
-      let text = '';
-      const ext = path.extname(fileName).toLowerCase();
-      if (ext === '.pdf') {
-        // PDF extraction
-        const data = await pdfParse(fileBuffer);
-        text = data.text;
-      } else if (ext === '.docx') {
-        // DOCX extraction
-        const result = await mammoth.extractRawText({ buffer: fileBuffer });
-        text = result.value;
-      } else {
-        // Default: treat as UTF-8 text
-        text = fileBuffer.toString('utf-8');
-      }
+      const text = await this.extractTextFromFile(fileBuffer, fileName);
 
       const chunkSize = 1000;
       const chunks: string[] = [];
@@ -157,7 +153,6 @@ export class FileService {
               const chunkId: number = await new Promise((resolve, reject) => {
                 self.db.run(
                   'INSERT INTO DocumentChunks (fileName, chunkIndex, content) VALUES (?, ?, ?)',
-
                   [fileName, chunkIdx, chunkData],
                   function (err: Error | null) {
                     if (err) {
@@ -201,34 +196,14 @@ export class FileService {
       logger.info(`Finished processing file: ${fileName}`);
     } catch (err) {
       logger.error('Error in processFile:', err);
-      throw new Error('Failed to process file');
+      throw err;
     }
   }
 
-  async clearAllDocuments(): Promise<void> {
-    logger.info('Clearing all documents and vectors from the database');
-    const db = this.db;
-    return new Promise((resolve, reject) => {
-      try {
-        db.run('DELETE FROM DocumentChunks', (err: Error | null) => {
-          if (err) {
-            logger.error('DB error in clearAllDocuments (DocumentChunks):', err);
-            return reject(err);
-          }
-          logger.info('All documents and vectors cleared from the database');
-          resolve();
-        });
-      } catch (err) {
-        logger.error('Exception in clearAllDocuments:', err);
-        reject(err);
-      }
-    });
-  }
-
   // Delete all document data, providing same db to ensure same connection
-  public async deleteAllDocumentsInTransaction(db: any): Promise<void> {
+  public async deleteAllDocumentsInTransaction(dbConn: any): Promise<void> {
     return new Promise((resolve, reject) => {
-      db.run('DELETE FROM DocumentChunks', (err: Error | null) => {
+      dbConn.run('DELETE FROM DocumentChunks', (err: Error | null) => {
         if (err) {
           logger.error('DB error in deleteAllDocumentsInTransaction (DocumentChunks):', err);
           return reject(err);
@@ -252,17 +227,15 @@ export class FileService {
     }
   }
 
-  public async getRelevantChunks(query: string, k: number = 3): Promise<string[]> {
+  public async getRelevantChunks(query: string, chunkCount: number): Promise<string[]> {
     try {
       // Get embedding for the query
       const embedding = await this.getEmbedding(query);
       // Query the vector DB for similar chunks
-      const results = await this.querySimilarChunks(embedding, k);
+      const results = await this.querySimilarChunks(embedding, chunkCount);
       if (!results || results.length === 0) return [];
       // Fetch the actual chunk content
-      const chunks = await Promise.all(
-        results.map((r) => this.getChunkById(r.fkChunkId))
-      );
+      const chunks = await Promise.all(results.map((r) => this.getChunkById(r.fkChunkId)));
       return chunks.map((c) => c.content);
     } catch (err) {
       logger.error('Error in getRelevantChunks:', err);
@@ -270,14 +243,15 @@ export class FileService {
     }
   }
 
-  public createFileContextMessage(fileContent: string): any {
+  public createFileContextMessage(fileName: string, fileContent: string): any {
+    const header = `[File Context] (${fileName})`;
     return {
-      role: 'file' as any, // OpenAI API only allows 'system', 'user', 'assistant', but we use this internally
+      role: 'file' as any, // OpenAI API only allows 'system', 'user', 'assistant'. Used internally
       content:
-        '[File Context]\n' +
+        header + '\n' +
         fileContent +
         '\n[End of File Context]\n' +
-        '\nDo not respond to this message. Use it only as context for answering user questions.'
+        '\nDo not respond to this message. Use it only as context for answering user questions. ' 
     };
   }
 }

@@ -7,7 +7,7 @@ const logFormat = printf(({ level, message, timestamp, stack }) => {
 });
 
 export const logger = createLogger({
-  level: process.env.LOG_LEVEL || 'info',
+  level: process.env.LOG_LEVEL,
   format: combine(
     errors({ stack: true }),
     colorize(),

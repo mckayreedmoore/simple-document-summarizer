@@ -1,8 +1,12 @@
 const settingsSchema = {
+  LOG_LEVEL: 'string',
   PORT: 'number',
   FILE_CONCURRENCY_PROCESS_LIMIT: 'number',
   DB_PATH: 'string',
-  
+  RAG_RELEVANT_CHUNK_COUNT: 'number',
+  FILE_SIZE_MAX_MB: 'number',
+  CONVERSATION_MAX_MB: 'number',
+
   OPENAI_API_KEY: 'string',
   OPENAI_EMBEDDING_MODEL: 'string',
   OPENAI_CHAT_MODEL: 'string',
