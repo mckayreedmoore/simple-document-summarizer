@@ -14,8 +14,8 @@ const ALLOWED_MIME_TYPES = [
   'text/csv',
   'text/markdown',
   'application/json',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
-  'application/octet-stream'
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/octet-stream',
 ];
 
 export const conversationController = {
@@ -23,7 +23,7 @@ export const conversationController = {
     logger.info('GET /conversation - fetching messages and documents');
     const [messages, documents] = await Promise.all([
       messageService.get(),
-      fileService.listUploadedDocuments()
+      fileService.listUploadedDocuments(),
     ]);
     res.json({ messages, documents });
   },
@@ -42,7 +42,7 @@ export const conversationController = {
       logger.warn(`Rejected file upload: file too large (${req.file.size} bytes)`);
       return res
         .status(400)
-        .json({ error: `File too large (max ${process.env.FILE_SIZE_MAX_MB}MB)` });
+        .json({ error: `File too large (max ${process.env.FILE_SIZE_MAX_MB}Mb)` });
     }
 
     // Sanitize file name: remove path, allow only safe chars, limit length
@@ -51,7 +51,10 @@ export const conversationController = {
     logger.info(`POST /conversation/upload-file - uploading file: ${safeFileName}`);
     await fileService.processFile(req.file.buffer, safeFileName);
     logger.info('File processed and saved successfully');
-    await messageService.saveMessage('file', safeFileName);
+    await messageService.saveMessage(
+      'file',
+      `fileName: ${safeFileName} \nfileContents:${req.file.buffer}`
+    );
     res.json({ success: true });
   },
 
@@ -64,9 +67,10 @@ export const conversationController = {
 
   // Streams conversation response incrementally using SSE
   async streamConversation(req: Request, res: Response, next: NextFunction) {
-    logger.info('POST /conversation/stream - streaming chat response');
     try {
+      logger.info('POST /conversation/stream - streaming chat response');
       const { prompt, history } = req.body;
+
       // Input validation
       if (typeof prompt !== 'string' || prompt.trim().length === 0) {
         logger.warn('Prompt missing or invalid');
@@ -78,60 +82,82 @@ export const conversationController = {
         res.status(400).json({ error: 'History must be an array' });
         return;
       }
-      // Conversation size validation (in MB)
-      const maxConversationMB = Number(process.env.CONVERSATION_MAX_MB);
-      let conversationSizeBytes = 0;
-      if (Array.isArray(history)) {
-        conversationSizeBytes = Buffer.byteLength(JSON.stringify(history), 'utf8');
-      }
-      logger.debug(`Conversation size: ${conversationSizeBytes} bytes (max ${maxConversationMB * 1024 * 1024} bytes)`);
-      if (conversationSizeBytes > maxConversationMB * 1024 * 1024) {
-        logger.warn('Conversation too large');
-        res.status(400).json({ error: `Conversation too large (max ${maxConversationMB}MB)` });
-        return;
-      }
+
+      // Set SSE headers first
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
       res.flushHeaders();
+
+      // Size validation
+      const maxConversationMb = Number(process.env.CONVERSATION_MAX_MB);
+      const { sizeInMb: historySizeMb } = await messageService.getConversationSizeInMb();
+      const promptMb = Buffer.byteLength(prompt, 'utf8') / (1024 * 1024);
+      const currentConversationMb = promptMb + historySizeMb;
+
+      if (currentConversationMb > maxConversationMb) {
+        logger.warn(
+          `Conversation too large (history: ${historySizeMb.toFixed(2)}Mb + 
+          prompt: ${promptMb.toFixed(2)}Mb = ${currentConversationMb.toFixed(2)}Mb > max: ${maxConversationMb}Mb)`
+        );
+        res.write(
+          `data: ${JSON.stringify({ error: `Conversation too large (max ${maxConversationMb}Mb)` })}\n\n`
+        );
+        res.end();
+        return;
+      }
+
       // Handle client disconnects and abort streaming
       let aborted = false;
       const abortController = new AbortController();
       const onClose = () => {
-        logger.info('Client disconnected from SSE stream');
+        logger.debug('Client disconnected from SSE stream - aborting response generation');
         aborted = true;
         abortController.abort();
+        res.off('close', onClose);
       };
       res.on('close', onClose);
       let fullResponse = '';
-      await messageService.saveMessage('user', prompt);
-      await messageService.streamChat(
-        prompt,
-        history,
-        (token) => {
-          if (aborted || res.writableEnded) return;
-          fullResponse += token;
-          try {
-            res.write(`data: ${JSON.stringify({ token })}\n\n`);
-          } catch (err) {
-            logger.error('Error writing to SSE stream:', err instanceof Error ? err.message + '\n' + err.stack : err);
-          }
-        },
-        abortController.signal // Pass abort signal to streamChat
-      );
-      if (!aborted && !res.writableEnded) {
-        await messageService.saveMessage('assistant', fullResponse);
-        logger.info('Assistant response saved');
-        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-        res.end();
+      try {
+        // Save user message concurrently, don't block streaming
+        const saveUserPromise = messageService.saveMessage('user', prompt);
+        await messageService.streamChat(
+          prompt,
+          history,
+          (token) => {
+            if (aborted || res.writableEnded) return;
+            fullResponse += token;
+            try {
+              res.write(`data: ${JSON.stringify({ token })}\n\n`);
+            } catch (err) {
+              logger.error('Error writing to SSE stream:', err);
+              // End the response and return if write fails
+              if (!res.writableEnded) {
+                res.end();
+              }
+              aborted = true;
+              return;
+            }
+          },
+          abortController.signal
+        );
+        // Wait for user message save to complete before saving assistant message
+        await saveUserPromise;
+        if (!aborted && !res.writableEnded) {
+          await messageService.saveMessage('assistant', fullResponse);
+          logger.info('Assistant response saved');
+          res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+          res.end();
+        }
+      } finally {
+        res.off('close', onClose);
       }
-      res.off('close', onClose);
     } catch (err) {
-      logger.error('Stream conversation error:', err instanceof Error ? err.message + '\n' + err.stack : err);
+      logger.error('Stream conversation error:', err);
       if (!res.writableEnded) {
         res.write(`data: ${JSON.stringify({ error: 'Failed to stream conversation.' })}\n\n`);
         res.end();
       }
     }
-  }
+  },
 };

@@ -71,7 +71,8 @@ const ChatArea: React.FC = () => {
     addMessage(userMsg);
     setInput('');
     try {
-      const history = [...messages, userMsg]
+      // Only send previous messages as history, not the current prompt
+      const history = messages
         .filter((m) => m.sender === 'user' || m.sender === 'bot')
         .map((m) => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }));
       const res = await fetch('/api/conversation/stream', {

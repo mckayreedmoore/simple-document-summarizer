@@ -52,11 +52,10 @@ export class MessageService {
 
   public async streamChat(
     userPrompt: string,
-    conversationHistory: { role: string; content: string }[] = [],
-    onToken?: (token: string) => void,
-    abortSignal?: AbortSignal
+    conversationHistory: { role: string; content: string }[],
+    onToken: (token: string) => void,
+    abortSignal: AbortSignal
   ): Promise<void> {
-    // Use env or default for chunk count
     if (typeof userPrompt !== 'string' || userPrompt.trim().length === 0) {
       throw new Error('Invalid userPrompt: must be a non-empty string.');
     }
@@ -64,14 +63,6 @@ export class MessageService {
       throw new Error('Invalid conversationHistory: must be an array.');
     }
 
-    // Defensive onToken
-    const safeOnToken = (token: string) => {
-      try {
-        if (onToken) onToken(token);
-      } catch (err) {
-        logger.error('Error in onToken callback:', err);
-      }
-    };
     let fileContextInjected = false;
     let fileContent: string | undefined = undefined;
     let historyArr = Array.isArray(conversationHistory) ? conversationHistory : [];
@@ -83,12 +74,15 @@ export class MessageService {
         fileContent = await this.fileService.getFullDocumentText(latestFile);
         fileContextInjected = !!fileContent;
         if (fileContent) {
-          fileContextMessage = this.fileService.createFileContextMessage(latestFile, fileContent);
+          fileContextMessage = this.fileService.createFileContextMessage(
+            latestFile,
+            fileContent
+          );
         }
       }
     }
     const contextChunks = await this.fileService.getRelevantChunks(
-      userPrompt, 
+      userPrompt,
       Number(process.env.RAG_RELEVANT_CHUNK_COUNT)
     );
     const contextMessage = `Context:\n${contextChunks.join('\n---\n')}`;
@@ -110,22 +104,7 @@ export class MessageService {
       })),
       { role: 'user', content: userPrompt },
     ];
-    if (fileContextInjected) {
-      // Fallback to non-streaming single response
-      try {
-        const response = await this.openai.chat.completions.create({
-          model: process.env.OPENAI_CHAT_MODEL as string,
-          messages,
-          max_tokens: 512,
-        });
-        safeOnToken(response.choices[0].message?.content || '');
-      } catch (err) {
-        logger.error('OpenAI API error (non-stream):', err);
-        throw new Error('Failed to get response from OpenAI API.');
-      }
-      return;
-    }
-    // Otherwise, stream as usual
+
     try {
       const stream = await this.openai.chat.completions.create({
         model: process.env.OPENAI_CHAT_MODEL as string,
@@ -134,12 +113,18 @@ export class MessageService {
         stream: true,
       });
       for await (const chunk of stream) {
-        if (abortSignal?.aborted) break;
+        if (abortSignal.aborted) break;
         const content = chunk.choices?.[0]?.delta?.content;
-        if (content) safeOnToken(content);
+        if (content) {
+          try {
+            onToken(content);
+          } catch (err) {
+            logger.error('Error in onToken callback:', err);
+          }
+        }
       }
     } catch (err) {
-      if (abortSignal?.aborted) {
+      if (abortSignal.aborted) {
         logger.info('OpenAI stream aborted by client disconnect.');
         return;
       }
@@ -172,6 +157,24 @@ export class MessageService {
             reject(err);
           });
       });
+    });
+  }
+
+  async getConversationSizeInMb(): Promise<{ sizeInMb: number; messageCount: number }> {
+    return new Promise((resolve, reject) => {
+      this.db.get(
+        'SELECT sizeInMb, messageCount FROM ConversationSizeView',
+        (err: Error | null, row: any) => {
+          if (err) {
+            logger.error('DB error in getConversationSizeInMb:', err);
+            return reject(err);
+          }
+          resolve({
+            sizeInMb: row?.sizeInMb || 0,
+            messageCount: row?.messageCount || 0,
+          });
+        }
+      );
     });
   }
 }

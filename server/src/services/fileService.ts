@@ -147,7 +147,11 @@ export class FileService {
     return chunkIds;
   }
 
-  private async processEmbedding(chunkIdx: number, chunkId: number, chunkData: string): Promise<void> {
+  private async processEmbedding(
+    chunkIdx: number,
+    chunkId: number,
+    chunkData: string
+  ): Promise<void> {
     try {
       const embedding = await this.getEmbedding(chunkData);
       await new Promise<void>((resolve, reject) => {
@@ -183,8 +187,12 @@ export class FileService {
       const chunkIds = await this.insertChunksAndGetIds(fileName, chunks);
 
       const concurrencyLimit = Number(process.env.FILE_CONCURRENCY_PROCESS_LIMIT);
-      const queue = chunks.map((chunk, idx) => ({ idx, chunkId: chunkIds[idx], chunkData: chunk }));
-      
+      const queue = chunks.map((chunk, idx) => ({
+        idx,
+        chunkId: chunkIds[idx],
+        chunkData: chunk,
+      }));
+
       await new Promise<void>((resolve, reject) => {
         let finished = 0;
         const total = queue.length;
@@ -202,7 +210,7 @@ export class FileService {
             .then(() => {
               activeCount--;
               finished++;
-              next(); 
+              next();
             })
             .catch(reject);
         };
@@ -211,7 +219,6 @@ export class FileService {
           next();
         }
       });
-
     } catch (err) {
       logger.error('Error in processFile:', err);
       throw err;
@@ -266,10 +273,11 @@ export class FileService {
     return {
       role: 'file' as any, // OpenAI API only allows 'system', 'user', 'assistant'. Used internally
       content:
-        header + '\n' +
+        header +
+        '\n' +
         fileContent +
         '\n[End of File Context]\n' +
-        '\nDo not respond to this message. Use it only as context for answering user questions. ' 
+        '\nDo not respond to this message. Use it only as context for answering user questions. ',
     };
   }
 }

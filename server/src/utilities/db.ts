@@ -57,6 +57,21 @@ export async function setupDatabase() {
       );
     `
     );
+
+    // Create a view that estimates conversation size in Mb
+    await runAsync(
+      db,
+      `
+      CREATE VIEW IF NOT EXISTS ConversationSizeView AS
+      SELECT 
+        -- Calculate total text length
+        -- Add 8 bytes per message for JSON structure ({"text": "", "role": ""})
+        -- Add 2 bytes for array brackets and divide by 1MB
+        (SUM(LENGTH(COALESCE(text, '')) + LENGTH(COALESCE(sender, '')) + 8) + 2) / 1024.0 / 1024.0 as sizeInMb,
+        COUNT(*) as messageCount
+      FROM Messages;
+    `
+    );
     logger.info('Database setup complete.');
   } catch (err) {
     logger.error('Database setup failed:', err);
