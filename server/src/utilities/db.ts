@@ -24,25 +24,38 @@ export async function setupDatabase() {
   const db = getDatabaseInstance();
   try {
     await runAsync(db, 'PRAGMA foreign_keys = ON;');
+    // Create Files table
     await runAsync(
       db,
       `
-      CREATE TABLE IF NOT EXISTS DocumentChunks (
-        chunkId INTEGER PRIMARY KEY AUTOINCREMENT,
-        fileName TEXT,
-        chunkIndex INTEGER,
-        content TEXT
+      CREATE TABLE IF NOT EXISTS Files (
+        fileId INTEGER PRIMARY KEY AUTOINCREMENT,
+        fileName TEXT NOT NULL 
       );
     `
     );
+    // Create FileChunks table
     await runAsync(
       db,
       `
-      CREATE TABLE IF NOT EXISTS DocumentVectors (
-        documentVectorId INTEGER PRIMARY KEY AUTOINCREMENT,
+      CREATE TABLE IF NOT EXISTS FileChunks (
+        fileChunkId INTEGER PRIMARY KEY AUTOINCREMENT,
+        fkFileId INTEGER NOT NULL,
+        chunkIndex INTEGER,
+        content TEXT,
+        FOREIGN KEY (fkFileId) REFERENCES Files(fileId) ON DELETE CASCADE
+      );
+    `
+    );
+    // Create FileVectors table
+    await runAsync(
+      db,
+      `
+      CREATE TABLE IF NOT EXISTS FileVectors (
+        fileVectorId INTEGER PRIMARY KEY AUTOINCREMENT,
         embedding TEXT,
         fkChunkId INTEGER NOT NULL,
-        FOREIGN KEY (fkChunkId) REFERENCES DocumentChunks(chunkId) ON DELETE CASCADE
+        FOREIGN KEY (fkChunkId) REFERENCES FileChunks(fileChunkId) ON DELETE CASCADE
       );
     `
     );
@@ -58,11 +71,11 @@ export async function setupDatabase() {
     `
     );
 
-    // Create a view that estimates conversation size in Mb
+    // Create a view that estimates messages size in Mb
     await runAsync(
       db,
       `
-      CREATE VIEW IF NOT EXISTS ConversationSizeView AS
+      CREATE VIEW IF NOT EXISTS MessagesSizeView AS
       SELECT 
         -- Calculate total text length
         -- Add 8 bytes per message for JSON structure ({"text": "", "role": ""})

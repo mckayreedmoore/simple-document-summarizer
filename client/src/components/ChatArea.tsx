@@ -171,6 +171,22 @@ const ChatArea: React.FC = () => {
           if (data.success) {
             // Refresh will replace the placeholder with the real doc
             documentListRef.current?.refresh();
+            // Fetch updated conversation history after upload
+            fetch('/api/conversation/get')
+              .then((res) => res.json())
+              .then((data) => {
+                if (Array.isArray(data.messages)) {
+                  setMessages(
+                    data.messages.map(
+                      (m: { id: number; sender: 'user' | 'bot'; text: string }) => ({
+                        id: m.id + '-' + m.sender,
+                        sender: m.sender,
+                        text: m.text,
+                      })
+                    )
+                  );
+                }
+              });
           } else {
             documentListRef.current?.removeUploading(tempId);
             addMessage({

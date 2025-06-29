@@ -20,12 +20,12 @@ const ALLOWED_MIME_TYPES = [
 
 export const conversationController = {
   async getConversation(req: Request, res: Response, next: NextFunction) {
-    logger.info('GET /conversation - fetching messages and documents');
-    const [messages, documents] = await Promise.all([
+    logger.info('GET /conversation - fetching messages and files');
+    const [messages, files] = await Promise.all([
       messageService.get(),
-      fileService.listUploadedDocuments(),
+      fileService.listUploadedFiles(),
     ]);
-    res.json({ messages, documents });
+    res.json({ messages, files });
   },
 
   async uploadFile(req: Request, res: Response, next: NextFunction) {
@@ -49,19 +49,21 @@ export const conversationController = {
     const originalName = path.basename(req.file.originalname);
     const safeFileName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 128);
     logger.info(`POST /conversation/upload-file - uploading file: ${safeFileName}`);
-    await fileService.processFile(req.file.buffer, safeFileName);
-    logger.info('File processed and saved successfully');
-    await messageService.saveMessage(
-      'file',
-      `fileName: ${safeFileName} \nfileContents:${req.file.buffer}`
+
+    const fileContextMsg = await fileService.processFileAndReturnContextMessage(
+      req.file.buffer,
+      safeFileName
     );
+    logger.info('File processed and saved successfully');
+    // Save file context message after processing
+    await messageService.saveMessage(fileContextMsg.role, fileContextMsg.content);
     res.json({ success: true });
   },
 
   async clearConversation(req: Request, res: Response, next: NextFunction) {
-    logger.info('POST /conversation/clear - clearing all messages and documents');
+    logger.info('POST /conversation/clear - clearing all messages and files');
     await messageService.clearAllData();
-    logger.info('All messages and documents cleared');
+    logger.info('All messages and files cleared');
     res.json({ success: true });
   },
 

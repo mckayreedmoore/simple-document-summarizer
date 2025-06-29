@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
 import { FileService } from './fileService';
+import type { File } from '../models/file';
 import { Message } from '../models/message';
 import { logger } from '../utilities/logger';
 import { getDatabaseInstance, runAsync } from '../utilities/db';
@@ -22,7 +23,11 @@ export class MessageService {
   async get(): Promise<Message[]> {
     return new Promise((resolve, reject) => {
       this.db.all(
-        "SELECT messageId, sender, text, createdAt FROM Messages WHERE sender != 'file' ORDER BY messageId ASC",
+        `
+        SELECT messageId, sender, text, createdAt
+        FROM Messages
+        ORDER BY messageId ASC
+        `,
         (err: Error | null, rows: Message[]) => {
           if (err) {
             logger.error('DB error in getAllMessages:', err);
@@ -37,7 +42,10 @@ export class MessageService {
   async saveMessage(sender: string, text: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.db.run(
-        'INSERT INTO Messages (sender, text) VALUES (?, ?)',
+        `
+        INSERT INTO Messages (sender, text)
+        VALUES (?, ?)
+        `,
         [sender, text],
         function (err: Error | null) {
           if (err) {
@@ -63,24 +71,7 @@ export class MessageService {
       throw new Error('Invalid conversationHistory: must be an array.');
     }
 
-    let fileContextInjected = false;
-    let fileContent: string | undefined = undefined;
     let historyArr = Array.isArray(conversationHistory) ? conversationHistory : [];
-    let fileContextMessage: ChatCompletionMessageParam | undefined = undefined;
-    if (!historyArr || historyArr.length === 0) {
-      const docs = await this.fileService.listUploadedDocuments();
-      if (docs && docs.length > 0) {
-        const latestFile = docs[0].fileName;
-        fileContent = await this.fileService.getFullDocumentText(latestFile);
-        fileContextInjected = !!fileContent;
-        if (fileContent) {
-          fileContextMessage = this.fileService.createFileContextMessage(
-            latestFile,
-            fileContent
-          );
-        }
-      }
-    }
     const contextChunks = await this.fileService.getRelevantChunks(
       userPrompt,
       Number(process.env.RAG_RELEVANT_CHUNK_COUNT)
@@ -88,19 +79,13 @@ export class MessageService {
     const contextMessage = `Context:\n${contextChunks.join('\n---\n')}`;
     const messages: ChatCompletionMessageParam[] = [
       { role: 'system', content: 'You are a helpful assistant.' },
-      {
-        role: 'system',
-        content:
-          'If you see a message with role "file", do not respond to it. Use it only as context for answering user questions.',
-      },
-      ...(fileContextMessage ? [fileContextMessage] : []),
       { role: 'system', content: contextMessage },
       ...historyArr.map((m) => ({
         role: (['user', 'assistant', 'system'].includes(m.role) ? m.role : 'user') as
           | 'user'
           | 'assistant'
           | 'system',
-        content: m.content,
+        content: (m as any).content,
       })),
       { role: 'user', content: userPrompt },
     ];
@@ -133,7 +118,7 @@ export class MessageService {
     }
   }
 
-  // Transactional clear for all messages and documents
+  // Transactional clear for all messages and files
   public async clearAllData(): Promise<void> {
     const db = this.db;
     return new Promise<void>((resolve, reject) => {
@@ -141,10 +126,10 @@ export class MessageService {
         logger.info('Beginning clearAllData transaction');
         runAsync(db, 'BEGIN TRANSACTION')
           .then(() => runAsync(db, 'DELETE FROM Messages'))
-          .then(() => this.fileService.deleteAllDocumentsInTransaction(db))
+          .then(() => this.fileService.deleteAllFilesInTransaction(db))
           .then(() => runAsync(db, 'COMMIT'))
           .then(() => {
-            logger.info('All messages, documents, and vectors cleared from the database');
+            logger.info('All messages and files have been cleared from the database');
             resolve();
           })
           .catch(async (err: unknown) => {
@@ -163,7 +148,10 @@ export class MessageService {
   async getConversationSizeInMb(): Promise<{ sizeInMb: number; messageCount: number }> {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT sizeInMb, messageCount FROM ConversationSizeView',
+        `
+        SELECT sizeInMb, messageCount
+        FROM MessagesSizeView
+        `,
         (err: Error | null, row: any) => {
           if (err) {
             logger.error('DB error in getConversationSizeInMb:', err);

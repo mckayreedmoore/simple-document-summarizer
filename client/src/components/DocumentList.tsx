@@ -43,7 +43,7 @@ const DocumentList = forwardRef<DocumentListHandle, DocumentListProps>(
         .then((res) => res.json())
         .then((data) => {
           setDocuments((docs) => {
-            const realDocs = (data.documents || []).map(
+            const realDocs = (data.files || []).map(
               (doc: { id: number; fileName: string }) => doc
             );
             const uploading = docs.filter(
