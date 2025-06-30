@@ -1,6 +1,6 @@
 # Simple Document Summarizer
 
-A full-stack web application for uploading, processing, and summarizing documents of various formats. The app provides a chat-like interface for interacting with document content, supporting incremental streaming of responses and file management.
+A full-stack web application for uploading, processing, and summarizing documents of various formats. The app provides a chat-like interface for interacting with document content, supports Retrieval-Augmented Generation (RAG) for enhanced document understanding, and features incremental streaming of responses and file management.
 
 ## Project Structure
 
