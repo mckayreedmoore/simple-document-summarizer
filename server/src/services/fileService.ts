@@ -1,4 +1,3 @@
-import fs from 'fs';
 import path from 'path';
 import { getDatabaseInstance } from '../utilities/db';
 import OpenAI from 'openai';
@@ -68,7 +67,7 @@ export class FileService {
       return scored.slice(0, k).map((row) => ({ fkChunkId: row.fkChunkId }));
     } catch (err) {
       logger.error('Error in querySimilarChunks:', err);
-      throw new Error('Failed to query similar chunks');
+      throw err;
     }
   }
 
@@ -99,7 +98,7 @@ export class FileService {
     if (ext === '.pdf') {
       if (fileBuffer.toString('utf-8', 0, 4) !== '%PDF') {
         logger.warn('File content does not match PDF signature');
-        throw new Error('File content does not match PDF signature');
+        throw new Error('Invalid PDF file.');
       }
       const data = await pdfParse(fileBuffer);
       return data.text;
@@ -118,7 +117,7 @@ export class FileService {
     }
 
     logger.warn('Unsupported file extension in extractTextFromFile');
-    throw new Error('Unsupported file extension');
+    throw new Error('Unsupported file type.');
   }
 
   private async insertChunksAndGetIds(fileName: string, chunks: string[]): Promise<number[]> {
@@ -192,6 +191,7 @@ export class FileService {
     fileName: string
   ): Promise<{ role: string; content: string }> {
     try {
+      // TODO: Wrap in transaction.
       logger.info(`Processing file: ${fileName}`);
       const text = await this.extractTextFromFile(fileBuffer, fileName);
 
@@ -237,12 +237,11 @@ export class FileService {
       // Return the file context message
       return this.createFileContextMessage(fileName, text);
     } catch (err) {
-      logger.error('Error in processFileAndReturnContextMessage:', err);
-      throw err;
+      throw new Error('File Upload failed. Try again or clear conversation and try again');
     }
   }
 
-  // Delete all file data, providing same db 
+  // Delete all file data, providing same db
   //  to ensure same connection if singleton pattern changes
   public async deleteAllFilesInTransaction(dbConn: any): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -282,7 +281,7 @@ export class FileService {
       return chunks.map((c) => c.content);
     } catch (err) {
       logger.error('Error in getRelevantChunks:', err);
-      throw new Error('Failed to get relevant chunks');
+      throw err;
     }
   }
 

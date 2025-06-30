@@ -1,4 +1,3 @@
-// conversationController.ts
 import { Request, Response, NextFunction } from 'express';
 import { MessageService } from '../services/messageService';
 import { FileService } from '../services/fileService';
@@ -20,51 +19,69 @@ const ALLOWED_MIME_TYPES = [
 
 export const conversationController = {
   async getConversation(req: Request, res: Response, next: NextFunction) {
-    logger.info('GET /conversation - fetching messages and files');
-    const [messages, files] = await Promise.all([
-      messageService.get(),
-      fileService.listUploadedFiles(),
-    ]);
-    res.json({ messages, files });
+    try {
+      logger.info('GET /conversation - fetching messages and files');
+      const [messages, files] = await Promise.all([
+        messageService.get(),
+        fileService.listUploadedFiles(),
+      ]);
+      res.json({ messages, files });
+    } catch (err) {
+      logger.error('Error in getConversation:', err);
+      next(new Error('Failed to getConversation.'));
+    }
   },
 
   async uploadFile(req: Request, res: Response, next: NextFunction) {
-    if (!req.file) {
-      logger.warn('File upload attempted with no file attached');
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-    // File type and size validation
-    if (!ALLOWED_MIME_TYPES.includes(req.file.mimetype)) {
-      logger.warn(`Rejected file upload: invalid MIME type ${req.file.mimetype}`);
-      return res.status(400).json({ error: 'Invalid file type' });
-    }
-    if (req.file.size > Number(process.env.FILE_SIZE_MAX_MB) * 1024 * 1024) {
-      logger.warn(`Rejected file upload: file too large (${req.file.size} bytes)`);
-      return res
-        .status(400)
-        .json({ error: `File too large (max ${process.env.FILE_SIZE_MAX_MB}Mb)` });
-    }
+    try {
+      if (!req.file) {
+        logger.warn('File upload attempted with no file attached');
+        throw new Error('No file uploaded');
+      }
+      // File type and size validation
+      if (!ALLOWED_MIME_TYPES.includes(req.file.mimetype)) {
+        logger.warn(`Rejected file upload: invalid MIME type ${req.file.mimetype}`);
+        throw new Error('Invalid file type');
+      }
+      if (req.file.size > Number(process.env.FILE_SIZE_MAX_MB) * 1024 * 1024) {
+        logger.warn(`Rejected file upload: file too large (${req.file.size} bytes)`);
+        throw new Error('File too large');
+      }
 
-    // Sanitize file name: remove path, allow only safe chars, limit length
-    const originalName = path.basename(req.file.originalname);
-    const safeFileName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 128);
-    logger.info(`POST /conversation/upload-file - uploading file: ${safeFileName}`);
+      try {
+        // Sanitize file name: remove path, allow only safe chars, limit length
+        const originalName = path.basename(req.file.originalname);
+        const safeFileName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 128);
+        logger.info(`POST /conversation/upload-file - uploading file: ${safeFileName}`);
 
-    const fileContextMsg = await fileService.processFileAndReturnContextMessage(
-      req.file.buffer,
-      safeFileName
-    );
-    logger.info('File processed and saved successfully');
-    // Save file context message after processing
-    await messageService.saveMessage(fileContextMsg.role, fileContextMsg.content);
-    res.json({ success: true });
+        const fileContextMsg = await fileService.processFileAndReturnContextMessage(
+          req.file.buffer,
+          safeFileName
+        );
+
+        // Save file context message after processing
+        await messageService.saveMessage(fileContextMsg.role, fileContextMsg.content);
+        logger.info('File processed and saved successfully');
+      } catch (err) {
+        throw new Error('An error occurred in file upload. Please try again or clear conversation and try again');
+      }
+      res.json({ success: true });
+    } catch (err) {
+      logger.error('Error in uploadFile:', err);
+      next(err);
+    }
   },
 
   async clearConversation(req: Request, res: Response, next: NextFunction) {
-    logger.info('POST /conversation/clear - clearing all messages and files');
-    await messageService.clearAllData();
-    logger.info('All messages and files cleared');
-    res.json({ success: true });
+    try {
+      logger.info('POST /conversation/clear - clearing all messages and files');
+      await messageService.clearAllData();
+      logger.info('All messages and files cleared');
+      res.json({ success: true });
+    } catch (err) {
+      logger.error('Error in clearConversation:', err);
+      next(new Error('An error occurred in clearing the conversation. Please try again.'));
+    }
   },
 
   // Streams conversation response incrementally using SSE
@@ -76,13 +93,11 @@ export const conversationController = {
       // Input validation
       if (typeof prompt !== 'string' || prompt.trim().length === 0) {
         logger.warn('Prompt missing or invalid');
-        res.status(400).json({ error: 'Message required' });
-        return;
+        throw new Error('Message required.');
       }
       if (history !== undefined && !Array.isArray(history)) {
         logger.warn('History is not an array');
-        res.status(400).json({ error: 'History must be an array' });
-        return;
+        throw new Error('Conversation history malformed. Try clearing the conversation and try again.');
       }
 
       // Set SSE headers first
@@ -99,11 +114,10 @@ export const conversationController = {
 
       if (currentConversationMb > maxConversationMb) {
         logger.warn(
-          `Conversation too large (history: ${historySizeMb.toFixed(2)}Mb + 
-          prompt: ${promptMb.toFixed(2)}Mb = ${currentConversationMb.toFixed(2)}Mb > max: ${maxConversationMb}Mb)`
+          `Conversation too large (history: ${historySizeMb.toFixed(2)}Mb + \n          prompt: ${promptMb.toFixed(2)}Mb = ${currentConversationMb.toFixed(2)}Mb > max: ${maxConversationMb}Mb)`
         );
         res.write(
-          `data: ${JSON.stringify({ error: `Conversation too large (max ${maxConversationMb}Mb)` })}\n\n`
+          `data: ${JSON.stringify({ error: { message: `Conversation too large (max ${maxConversationMb}Mb)`, code: 'CONVERSATION_TOO_LARGE', status: 400 } })}\n\n`
         );
         res.end();
         return;
@@ -155,9 +169,9 @@ export const conversationController = {
         res.off('close', onClose);
       }
     } catch (err) {
-      logger.error('Stream conversation error:', err);
+      logger.error('Error in streamConversation:', err);
       if (!res.writableEnded) {
-        res.write(`data: ${JSON.stringify({ error: 'Failed to stream conversation.' })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: { message: 'Failed to stream conversation.', code: 'STREAM_ERROR', status: 500 } })}\n\n`);
         res.end();
       }
     }

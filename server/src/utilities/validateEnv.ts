@@ -6,6 +6,7 @@ const settingsSchema = {
   RAG_RELEVANT_CHUNK_COUNT: 'number',
   FILE_SIZE_MAX_MB: 'number',
   CONVERSATION_MAX_MB: 'number',
+  NODE_ENV: 'string',
 
   OPENAI_API_KEY: 'string',
   OPENAI_EMBEDDING_MODEL: 'string',

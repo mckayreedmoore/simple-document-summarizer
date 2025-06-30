@@ -1,6 +1,5 @@
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-
 import { FileService } from './fileService';
 import type { File } from '../models/file';
 import { Message } from '../models/message';
@@ -24,7 +23,7 @@ export class MessageService {
     return new Promise((resolve, reject) => {
       this.db.all(
         `
-        SELECT messageId, sender, text, createdAt
+        SELECT messageId, role, text, createdAt
         FROM Messages
         ORDER BY messageId ASC
         `,
@@ -39,14 +38,14 @@ export class MessageService {
     });
   }
 
-  async saveMessage(sender: string, text: string): Promise<void> {
+  async saveMessage(role: string, text: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.db.run(
         `
-        INSERT INTO Messages (sender, text)
+        INSERT INTO Messages (role, text)
         VALUES (?, ?)
         `,
-        [sender, text],
+        [role, text],
         function (err: Error | null) {
           if (err) {
             logger.error('DB error in saveMessage:', err);
@@ -64,13 +63,6 @@ export class MessageService {
     onToken: (token: string) => void,
     abortSignal: AbortSignal
   ): Promise<void> {
-    if (typeof userPrompt !== 'string' || userPrompt.trim().length === 0) {
-      throw new Error('Invalid userPrompt: must be a non-empty string.');
-    }
-    if (!Array.isArray(conversationHistory)) {
-      throw new Error('Invalid conversationHistory: must be an array.');
-    }
-
     let historyArr = Array.isArray(conversationHistory) ? conversationHistory : [];
     const contextChunks = await this.fileService.getRelevantChunks(
       userPrompt,
@@ -94,7 +86,7 @@ export class MessageService {
       const stream = await this.openai.chat.completions.create({
         model: process.env.OPENAI_CHAT_MODEL as string,
         messages,
-        max_tokens: 512,
+        max_completion_tokens: 1024,
         stream: true,
       });
       for await (const chunk of stream) {
@@ -114,7 +106,7 @@ export class MessageService {
         return;
       }
       logger.error('OpenAI API error (stream):', err);
-      throw new Error('Failed to stream response from OpenAI API.');
+      throw err;
     }
   }
 

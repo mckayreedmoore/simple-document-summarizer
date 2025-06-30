@@ -1,6 +1,6 @@
 export interface Message {
   messageId: number;
-  sender: string;
+  role: string;
   text: string;
   createdAt: string;
 }

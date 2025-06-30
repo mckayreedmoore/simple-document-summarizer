@@ -1,300 +1,263 @@
-import React, { useRef, useState, useEffect } from 'react';
-import ChatInput from './ChatInput';
-import DocumentList from './DocumentList';
-import type { DocumentListHandle } from './DocumentList';
+import { useRef, useState, useEffect, useCallback } from 'react';
+import ChatInput from './chatInput.tsx';
+import FileList from './fileList.tsx';
+import { useDragAndDrop } from '../hooks/useDragAndDrop';
+import DragDropArea from './dragDropArea.tsx';
+import { toast } from 'react-toastify';
+import type { File } from '../types/file.ts';
+import { useFileUpload } from '../hooks/useFileUpload';
 
 interface Message {
-  id: string;
-  sender: 'user' | 'bot';
+  messageId: number;
+  sender: 'user' | 'assistant' | 'system';
   text: string;
+  loading?: boolean;
 }
 
-const BOTTOM_BAR_HEIGHT = 75;
+function upsertMessageInList(list: Message[], msg: Message, matchId?: number) {
+  const idx = matchId !== undefined ? list.findIndex((m) => m.messageId === matchId) : -1;
+  if (idx !== -1) return [...list.slice(0, idx), msg, ...list.slice(idx + 1)];
+  return [...list, msg];
+}
 
-const ChatArea: React.FC = () => {
+function ChatArea() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [files, setFiles] = useState<File[]>([]); 
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const chatAreaRef = useRef<HTMLDivElement>(null);
-  const documentListRef = useRef<DocumentListHandle>(null);
 
-  useEffect(() => {
-    // Fetch conversation on mount
-    fetch('/api/conversation/get')
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data.messages)) {
-          setMessages(
-            data.messages.map((m: { id: number; sender: 'user' | 'bot'; text: string }) => ({
-              id: m.id + '-' + m.sender,
-              sender: m.sender,
-              text: m.text,
-            }))
-          );
-        }
-        // Optionally, you could update DocumentList here if you want to pass documents directly
-        // if (Array.isArray(data.documents)) {
-        //   documentListRef.current?.setDocuments(data.documents);
-        // }
-      });
+  const upsertMessage = useCallback((msg: Message, matchId?: number) => {
+    setMessages((prev) => upsertMessageInList(prev, msg, matchId));
   }, []);
 
-  // Scroll to bottom on initial load only
-  useEffect(() => {
-    if (messages.length > 0) {
-      bottomRef.current?.scrollIntoView({ behavior: 'auto' });
-    }
-    // eslint-disable-next-line
-  }, [messages.length === 0]);
-
-  useEffect(() => {
-    if (messages.length > 0) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
-
-  const addMessage = React.useCallback((msg: Message) => {
-    setMessages((prev) => [...prev, msg]);
-  }, []);
-
-  // Streaming chat handler
-  const handleSend = async () => {
-    if (!input.trim()) return;
-    const userMsg: Message = {
-      id: Date.now() + '-user',
-      sender: 'user',
-      text: input,
-    };
-    setLoading(true);
-    addMessage(userMsg);
-    setInput('');
+  const fetchConversation = useCallback(async () => {
     try {
-      // Only send previous messages as history, not the current prompt
-      const history = messages
-        .filter((m) => m.sender === 'user' || m.sender === 'bot')
-        .map((m) => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.text }));
+      const res = await fetch('/api/conversation/get');
+      const data = await res.json();
+      if (Array.isArray(data.messages)) {
+        setMessages(
+          data.messages.map(
+            (m: { messageId: number; sender: string; text: string }): Message => ({
+              messageId: m.messageId,
+              sender:
+                m.sender === 'user'
+                  ? 'user'
+                  : m.sender === 'assistant'
+                  ? 'assistant'
+                  : 'system',
+              text: m.text,
+            })
+          )
+        );
+      }
+      if (Array.isArray(data.files)) {
+        setFiles(data.files);
+      }
+      if (data.error) {
+        const errorMsg = typeof data.error === 'string' ? data.error : data.error?.message || 'Unknown error';
+        toast.error('Error fetching conversation: ' + errorMsg);
+      }
+    } catch {
+      toast.error('Error fetching conversation.');
+    }
+  }, []);
+
+  const { handleFileUpload: uploadFile } = useFileUpload(fetchConversation);
+
+  // Helper: Stream and update assistant message
+  async function streamAssistantResponse(
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    decoder: TextDecoder,
+    onToken: (token: string) => void,
+    onError: (err: string) => void,
+    onDone: () => void
+  ) {
+    let done = false;
+    let buffer = '';
+    while (!done) {
+      const { value, done: doneReading } = await reader.read();
+      done = doneReading;
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\n\n/);
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6));
+            if (data.token) onToken(data.token);
+            if (data.done) onDone();
+            if (data.error) onError(data.error);
+          }
+        }
+      }
+    }
+    // Process any remaining buffer after stream ends
+    if (buffer && buffer.startsWith('data: ')) {
+      try {
+        const data = JSON.parse(buffer.slice(6));
+        if (data.token) onToken(data.token);
+        if (data.done) onDone();
+        if (data.error) onError(data.error);
+      } catch {
+        // ignore JSON parse errors for trailing buffer
+      }
+    }
+  }
+
+  const handleSend = useCallback(async () => {
+    if (!input.trim()) return;
+    setLoading(true);
+    const userMsgId = Date.now();
+    upsertMessage({ messageId: userMsgId, sender: 'user', text: input });
+    setInput('');
+    const assistantMsgId = Date.now() + 1;
+    // Insert the initial assistant message with the same messageId as will be used for streaming updates
+    upsertMessage(
+      { messageId: assistantMsgId, sender: 'assistant', text: '', loading: true },
+      assistantMsgId
+    );
+    try {
+      const history = [
+        ...messages
+          .filter((m) => m.sender === 'user' || m.sender === 'assistant')
+          .map((m) => ({ role: m.sender, content: m.text })),
+        { role: 'user', content: input },
+      ];
       const res = await fetch('/api/conversation/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: input, history }),
       });
       if (!res.body) throw new Error('No response body');
-      let botMsg: Message = {
-        id: Date.now() + '-bot',
-        sender: 'bot',
-        text: '',
-      };
-      addMessage(botMsg);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let done = false;
-      let buffer = '';
-      while (!done) {
-        const { value, done: doneReading } = await reader.read();
-        done = doneReading;
-        if (value) {
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split(/\n\n/);
-          buffer = lines.pop() || '';
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.slice(6));
-              if (data.token) {
-                botMsg = {
-                  ...botMsg,
-                  text: (botMsg.text || '') + data.token,
-                };
-                setMessages((prev) => {
-                  const last = prev[prev.length - 1];
-                  if (last && last.id === botMsg.id) {
-                    return [...prev.slice(0, -1), botMsg];
-                  } else {
-                    return [...prev, botMsg];
-                  }
-                });
-              }
-              if (data.done) {
-                setLoading(false);
-              }
-              if (data.error) {
-                botMsg = {
-                  ...botMsg,
-                  text: data.error,
-                };
-                setMessages((prev) => {
-                  const last = prev[prev.length - 1];
-                  if (last && last.id === botMsg.id) {
-                    return [...prev.slice(0, -1), botMsg];
-                  } else {
-                    return [...prev, botMsg];
-                  }
-                });
-                setLoading(false);
-              }
-            }
-          }
-        }
-      }
-      setLoading(false);
+      let assistantText = '';
+      await streamAssistantResponse(
+        reader,
+        decoder,
+        (token) => {
+          assistantText += token;
+          upsertMessage(
+            { messageId: assistantMsgId, sender: 'assistant', text: assistantText },
+            assistantMsgId
+          );
+        },
+        (err) => {
+          let errorMsg = 'Error';
+          if (typeof err === 'string') errorMsg = err;
+          else if (err && typeof err === 'object' && 'message' in err) errorMsg = (err as { message: string }).message;
+          toast.error(errorMsg);
+          setLoading(false);
+        },
+        () => setLoading(false)
+      );
     } catch (err) {
+      setMessages((prev) => prev.filter((m) => !m.loading));
       let errorMsg = 'Error';
-      if (err instanceof Error) {
-        errorMsg = err.message;
-      }
-      addMessage({
-        id: Date.now() + '-bot-error',
-        sender: 'bot',
-        text: errorMsg,
-      });
+      if (err && typeof err === 'object' && 'message' in err) errorMsg = (err as { message: string }).message;
+      else if (typeof err === 'string') errorMsg = err;
+      toast.error(errorMsg);
       setLoading(false);
     }
-  };
+  }, [input, messages, upsertMessage]);
 
-  const handleFileUpload = React.useCallback(
-    async (files: FileList) => {
-      if (!files.length) return;
-      const file = files[0];
-      const tempId = 'uploading-' + Date.now() + '-' + Math.random();
-      documentListRef.current?.addUploading(tempId, file.name);
-      // Do not block UI
-      (async () => {
-        const formData = new FormData();
-        formData.append('file', file);
-        try {
-          const response = await fetch('/api/conversation/upload-file', {
-            method: 'POST',
-            body: formData,
-          });
-          const data = await response.json();
-          if (data.success) {
-            // Refresh will replace the placeholder with the real doc
-            documentListRef.current?.refresh();
-            // Fetch updated conversation history after upload
-            fetch('/api/conversation/get')
-              .then((res) => res.json())
-              .then((data) => {
-                if (Array.isArray(data.messages)) {
-                  setMessages(
-                    data.messages.map(
-                      (m: { id: number; sender: 'user' | 'bot'; text: string }) => ({
-                        id: m.id + '-' + m.sender,
-                        sender: m.sender,
-                        text: m.text,
-                      })
-                    )
-                  );
-                }
-              });
-          } else {
-            documentListRef.current?.removeUploading(tempId);
-            addMessage({
-              id: Date.now() + '-bot-file',
-              sender: 'bot',
-              text: `Failed to process file "${file.name}".`,
-            });
-          }
-        } catch {
-          documentListRef.current?.removeUploading(tempId);
-          addMessage({
-            id: Date.now() + '-bot-file-error',
-            sender: 'bot',
-            text: `File upload failed for "${file.name}".`,
-          });
-        }
-      })();
-    },
-    [addMessage]
+  // Replace file upload logic with hook
+  const handleFileUpload = (filesList: FileList) => {
+    if (!filesList.length) return;
+    const file = filesList[0];
+    const tempFile: File = {
+      id: 'uploading-' + Date.now(),
+      fileName: file.name,
+      uploading: true,
+    };
+    setFiles((prev) => [...prev, tempFile]);
+    uploadFile(filesList); // Call the upload logic which will refresh files after upload
+    // The tempFile will be replaced by the real file list after fetchConversation
+  };
+  // Use drag and drop hook
+  const dragDrop = useDragAndDrop(
+    handleFileUpload,
+    chatAreaRef as React.RefObject<HTMLElement>
   );
 
-  const handleClearConversation = async () => {
+  const handleClearConversation = useCallback(async () => {
     setLoading(true);
     await fetch('/api/conversation/clear', { method: 'POST' });
     setMessages([]);
-    documentListRef.current?.refresh();
+    fetchConversation();
     setLoading(false);
-  };
+  }, [fetchConversation]);
 
-  // Drag and drop handlers for the whole chat area
+  // --- Derived values ---
+  const visibleMessages = messages.filter(
+    (msg) => msg.sender !== 'system'
+  );
+
+  // --- Effects ---
   useEffect(() => {
-    const chatArea = chatAreaRef.current;
-    if (!chatArea) return;
-    const handleDragOver = (e: DragEvent) => {
-      e.preventDefault();
-      setDragActive(true);
-    };
-    const handleDragLeave = (e: DragEvent) => {
-      if (e.target === chatArea) setDragActive(false);
-    };
-    const handleDrop = (e: DragEvent) => {
-      e.preventDefault();
-      setDragActive(false);
-      if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-        handleFileUpload(e.dataTransfer.files);
-      }
-    };
-    chatArea.addEventListener('dragover', handleDragOver);
-    chatArea.addEventListener('dragleave', handleDragLeave);
-    chatArea.addEventListener('drop', handleDrop);
-    return () => {
-      chatArea.removeEventListener('dragover', handleDragOver);
-      chatArea.removeEventListener('dragleave', handleDragLeave);
-      chatArea.removeEventListener('drop', handleDrop);
-    };
-  }, [handleFileUpload]);
+    fetchConversation();
+  }, [fetchConversation]);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
+  // --- Render ---
   return (
-    <div className='flex min-h-screen w-full items-center justify-center bg-zinc-900'>
-      <div
-        ref={chatAreaRef}
-        className={
-          'relative mx-4 flex h-[90vh] w-[70vw] flex-col overflow-hidden rounded-2xl border border-zinc-300 bg-zinc-900 shadow-lg md:mx-8 lg:mx-16 ' +
-          (dragActive ? 'ring-4 ring-blue-400 ring-opacity-60' : '')
-        }
-      >
-        <div className='scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent scrollbar-corner-transparent flex min-h-0 flex-1 flex-col overflow-y-auto p-8'>
-          <div className='scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent scrollbar-corner-transparent flex min-h-0 w-full flex-1 flex-col overflow-y-auto pr-4'>
-            <div className='mb-2 flex justify-end'></div>
-            {messages.length === 0 && (
-              <div className='mt-10 select-none text-center text-lg text-zinc-500'>
-                Chat with me
-              </div>
-            )}
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`my-2 flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
+    <>
+      <div className='flex min-h-screen w-full items-center justify-center bg-zinc-900'>
+        <DragDropArea
+          dragActive={dragDrop.dragActive}
+          handleDragOver={dragDrop.handleDragOver}
+          handleDragLeave={dragDrop.handleDragLeave}
+          handleDrop={dragDrop.handleDrop}
+          className={'relative mx-4 flex h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-zinc-300 bg-zinc-900 shadow-lg'}
+          forwardedRef={chatAreaRef as React.RefObject<HTMLDivElement>}
+        >
+          <div className={'scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent flex min-h-0 flex-1 flex-col overflow-y-auto p-6'} ref={chatAreaRef} style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className='flex w-full flex-1 flex-col'>
+              {visibleMessages.map((msg) => (
                 <div
-                  className={`max-w-3xl whitespace-pre-line break-words rounded-xl px-5 py-3 text-left text-base shadow ${
-                    msg.sender === 'user'
-                      ? 'ml-auto mr-1 rounded-br-md bg-blue-600 text-white'
-                      : 'ml-1 mr-auto rounded-bl-md border border-zinc-700 bg-zinc-800 text-zinc-100'
-                  }`}
+                  key={msg.messageId}
+                  className={`my-2 flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
-                  {msg.text}
+                  <div
+                    className={
+                      'break-words break-all max-w-3xl whitespace-pre-line rounded-xl px-5 py-3 text-base shadow flex items-center min-h-[40px]' +
+                      (msg.sender === 'user'
+                        ? ' ml-auto mr-1 rounded-br-md bg-blue-600 text-white'
+                        : ' ml-1 mr-auto rounded-bl-md border border-zinc-700 bg-zinc-800 text-zinc-100')
+                    }
+                  >
+                    {msg.loading ? <span className='animate-pulse'>...thinking</span> : msg.text}
+                  </div>
                 </div>
+              ))}
+              <div ref={bottomRef} />
+              {visibleMessages.length === 0 && (
+                <div className='mt-10 select-none text-center text-lg text-zinc-500'>
+                  Chat with me
+                </div>
+              )}
+            </div>
+          </div>
+          <div className='flex h-[9vh] max-h-[120px] min-h-[60px] flex-row items-end border-t border-zinc-300 bg-zinc-900'>
+            <div className='h-full w-[40%] min-w-[220px] max-w-[420px] flex-shrink-0'>
+              <div className='h-full'>
+                <FileList files={files} />
               </div>
-            ))}
-            <div ref={bottomRef} />
-          </div>
-        </div>
-        <div className='flex flex-row items-end' style={{ height: BOTTOM_BAR_HEIGHT }}>
-          <div className='h-full w-[40%] min-w-[260px] max-w-[420px]'>
-            <DocumentList ref={documentListRef} height={BOTTOM_BAR_HEIGHT} />
-          </div>
-          <div className='h-full flex-1'>
-            <div className='flex h-full items-center border-t border-zinc-300 bg-zinc-900 p-4'>
-              <div className='flex h-full w-full items-center'>
+            </div>
+            <div className='h-full flex-1'>
+              <div className='flex h-full items-center p-4'>
                 <ChatInput
                   value={input}
                   onChange={setInput}
                   onSend={handleSend}
                   disabled={loading}
                   onFileUpload={handleFileUpload}
-                  dragActive={dragActive}
-                  setDragActive={setDragActive}
+                  dragActive={dragDrop.dragActive}
+                  setDragActive={dragDrop.setDragActive}
                   className='h-full w-full'
                   onClearConversation={handleClearConversation}
                   clearLoading={loading}
@@ -302,18 +265,10 @@ const ChatArea: React.FC = () => {
               </div>
             </div>
           </div>
-        </div>
-        {/* Remove or comment out the loading overlay so chat is visible while streaming */}
-        {/*
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50 rounded-xl">
-            <LoadingSpinner />
-          </div>
-        )}
-        */}
+        </DragDropArea>
       </div>
-    </div>
+    </>
   );
-};
+}
 
 export default ChatArea;
