@@ -101,8 +101,6 @@ cd ../client && npm run dev # Start frontend only
 ### Client (`client/package.json`)
 - `npm run dev` — Start the Vite development server
 - `npm run build` — Type-check and build the React app for production
-- `npm run preview` — Preview the production build locally
-- `npm run lint` — Lint client code
 
 ## Features
 - Upload and process multiple document types (TXT, PDF, DOCX, CSV, Markdown, JSON, etc.)
