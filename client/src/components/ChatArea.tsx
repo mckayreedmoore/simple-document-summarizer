@@ -218,10 +218,12 @@ function ChatArea() {
                 >
                   <div
                     className={
-                      'break-words break-all max-w-3xl whitespace-pre-line rounded-xl px-5 py-3 text-base shadow flex items-center min-h-[40px]' +
-                      (msg.role === 'user'
+                      'break-normal max-w-3xl whitespace-pre-line rounded-xl px-5 py-3 text-base shadow flex items-center min-h-[40px] text-left' +
+                      (
+                        msg.role === 'user'
                         ? ' ml-auto mr-1 rounded-br-md bg-blue-600 text-white'
-                        : ' ml-1 mr-auto rounded-bl-md border border-zinc-700 bg-zinc-800 text-zinc-100')
+                        : ' ml-1 mr-auto rounded-bl-md border border-zinc-700 bg-zinc-800 text-zinc-100'
+                      )
                     }
                   >
                     {msg.loading ? <span className='animate-pulse'>...thinking</span> : msg.content}
