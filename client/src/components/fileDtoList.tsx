@@ -1,30 +1,30 @@
 import React from 'react';
-import type { File } from '../types/file';
+import type { FileDto } from '../types/fileDto';
 
-interface FileListProps {
-  files: File[];
+interface FileDtoListProps {
+  fileDtos: FileDto[];
 }
 
-const FileList: React.FC<FileListProps> = ({ files }) => (
+const FileDtoList: React.FC<FileDtoListProps> = ({ fileDtos: fileDtos }) => (
   <div className='flex h-full flex-col gap-2 overflow-y-auto rounded-bl-2xl border-l border-t border-zinc-300 border-zinc-700 bg-zinc-800/70 px-3 py-3 shadow-xl backdrop-blur-md'>
-    {files.length === 0 ? (
+    {fileDtos.length === 0 ? (
       <>
         <h2 className='text-xs font-semibold uppercase tracking-wide text-zinc-100'>Files</h2>
         <div className='text-zinc-400'>No files uploaded.</div>
       </>
     ) : (
       <ul className='grid w-full grid-cols-3 gap-x-3 gap-y-3'>
-        {files.map((file) => (
+        {fileDtos.map((fileDto) => (
           <li
-            key={file.id}
+            key={fileDto.fileId}
             className='group relative flex min-w-0 items-center rounded-xl border border-zinc-600 bg-zinc-700/80 px-2 py-3 shadow-md transition-all duration-150'
             style={{ minHeight: 44 }}
           >
             <span
               className='relative block min-w-0 flex-1 truncate pr-2 text-sm text-zinc-100'
             >
-              {file.fileName}
-              {file.uploading && (
+              {fileDto.fileName}
+              {fileDto.uploading && (
                 <span
                   className='absolute inset-0 flex items-center justify-center bg-black/40'
                   style={{ borderRadius: 8 }}
@@ -53,4 +53,4 @@ const FileList: React.FC<FileListProps> = ({ files }) => (
   </div>
 );
 
-export default FileList;
+export default FileDtoList;

@@ -8,12 +8,18 @@ const messageService = new MessageService();
 const fileService = new FileService();
 
 const ALLOWED_MIME_TYPES = [
+  // Plain text
   'text/plain',
-  'application/pdf',
-  'text/csv',
   'text/markdown',
+  'text/x-log',
+  'text/csv',
+  'application/csv',
   'application/json',
+  // PDF
+  'application/pdf',
+  // DOCX
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  // Some browsers/clients may use octet-stream for unknown types
   'application/octet-stream',
 ];
 

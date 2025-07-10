@@ -1,35 +1,38 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import ChatInput from './chatInput.tsx';
-import FileList from './fileList.tsx';
-import { useDragAndDrop } from '../hooks/useDragAndDrop';
+import FileDtoList from './fileDtoList.tsx';
+import { useDragAndDrop } from '../hooks/useDragAndDrop.ts';
 import DragDropArea from './dragDropArea.tsx';
 import { toast } from 'react-toastify';
-import type { File } from '../types/file.ts';
-import { useFileUpload } from '../hooks/useFileUpload';
+import type { FileDto } from '../types/fileDto.ts';
+import { useFileUpload } from '../hooks/useFileUpload.ts';
 
 interface Message {
   messageId: number;
-  sender: 'user' | 'assistant' | 'system';
-  text: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
   loading?: boolean;
 }
 
-function upsertMessageInList(list: Message[], msg: Message, matchId?: number) {
-  const idx = matchId !== undefined ? list.findIndex((m) => m.messageId === matchId) : -1;
-  if (idx !== -1) return [...list.slice(0, idx), msg, ...list.slice(idx + 1)];
-  return [...list, msg];
-}
 
 function ChatArea() {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [files, setFiles] = useState<File[]>([]); 
+  const visibleMessages = messages.filter(
+    (msg) => msg.role !== 'system'
+  );
+  const [fileDtos, setFileDtos] = useState<FileDto[]>([]); 
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const chatAreaRef = useRef<HTMLDivElement>(null);
 
-  const upsertMessage = useCallback((msg: Message, matchId?: number) => {
-    setMessages((prev) => upsertMessageInList(prev, msg, matchId));
+  const upsertMessage = useCallback((msg: Message, matchId?: number) => { 
+    setMessages((prev) => {
+      if (matchId !== undefined && prev.some((m) => m.messageId === matchId)) {
+        return prev.map((m) => (m.messageId === matchId ? msg : m));
+      }
+      return [...prev, msg];
+    });
   }, []);
 
   const fetchConversation = useCallback(async () => {
@@ -37,23 +40,10 @@ function ChatArea() {
       const res = await fetch('/api/conversation/get');
       const data = await res.json();
       if (Array.isArray(data.messages)) {
-        setMessages(
-          data.messages.map(
-            (m: { messageId: number; sender: string; text: string }): Message => ({
-              messageId: m.messageId,
-              sender:
-                m.sender === 'user'
-                  ? 'user'
-                  : m.sender === 'assistant'
-                  ? 'assistant'
-                  : 'system',
-              text: m.text,
-            })
-          )
-        );
+        setMessages(data.messages);
       }
       if (Array.isArray(data.files)) {
-        setFiles(data.files);
+        setFileDtos(data.files);
       }
       if (data.error) {
         const errorMsg = typeof data.error === 'string' ? data.error : data.error?.message || 'Unknown error';
@@ -66,14 +56,16 @@ function ChatArea() {
 
   const { handleFileUpload: uploadFile } = useFileUpload(fetchConversation);
 
-  // Helper: Stream and update assistant message
   async function streamAssistantResponse(
-    reader: ReadableStreamDefaultReader<Uint8Array>,
-    decoder: TextDecoder,
-    onToken: (token: string) => void,
-    onError: (err: string) => void,
-    onDone: () => void
+    params: {
+      reader: ReadableStreamDefaultReader<Uint8Array>;
+      decoder: TextDecoder;
+      onToken: (token: string) => void;
+      onError: (err: string) => void;
+      onDone: () => void;
+    }
   ) {
+    const { reader, decoder, onToken, onError, onDone } = params;
     let done = false;
     let buffer = '';
     while (!done) {
@@ -110,19 +102,17 @@ function ChatArea() {
     if (!input.trim()) return;
     setLoading(true);
     const userMsgId = Date.now();
-    upsertMessage({ messageId: userMsgId, sender: 'user', text: input });
+    upsertMessage({ messageId: userMsgId, role: 'user', content: input });
     setInput('');
     const assistantMsgId = Date.now() + 1;
     // Insert the initial assistant message with the same messageId as will be used for streaming updates
     upsertMessage(
-      { messageId: assistantMsgId, sender: 'assistant', text: '', loading: true },
+      { messageId: assistantMsgId, role: 'assistant', content: '', loading: true },
       assistantMsgId
     );
     try {
       const history = [
-        ...messages
-          .filter((m) => m.sender === 'user' || m.sender === 'assistant')
-          .map((m) => ({ role: m.sender, content: m.text })),
+        ...messages,
         { role: 'user', content: input },
       ];
       const res = await fetch('/api/conversation/stream', {
@@ -134,25 +124,25 @@ function ChatArea() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let assistantText = '';
-      await streamAssistantResponse(
-        reader,
-        decoder,
-        (token) => {
+      await streamAssistantResponse({
+        reader: reader,
+        decoder: decoder,
+        onToken: (token) => {
           assistantText += token;
           upsertMessage(
-            { messageId: assistantMsgId, sender: 'assistant', text: assistantText },
+            { messageId: assistantMsgId, role: 'assistant', content: assistantText },
             assistantMsgId
           );
         },
-        (err) => {
+        onError: (err) => {
           let errorMsg = 'Error';
           if (typeof err === 'string') errorMsg = err;
           else if (err && typeof err === 'object' && 'message' in err) errorMsg = (err as { message: string }).message;
           toast.error(errorMsg);
           setLoading(false);
         },
-        () => setLoading(false)
-      );
+        onDone: () => setLoading(false)
+      });
     } catch (err) {
       setMessages((prev) => prev.filter((m) => !m.loading));
       let errorMsg = 'Error';
@@ -163,20 +153,30 @@ function ChatArea() {
     }
   }, [input, messages, upsertMessage]);
 
-  // Replace file upload logic with hook
   const handleFileUpload = (filesList: FileList) => {
     if (!filesList.length) return;
     const file = filesList[0];
-    const tempFile: File = {
-      id: 'uploading-' + Date.now(),
+    const tempFile: FileDto = {
+      fileId: 'uploading-' + Date.now(),
       fileName: file.name,
       uploading: true,
     };
-    setFiles((prev) => [...prev, tempFile]);
-    uploadFile(filesList); // Call the upload logic which will refresh files after upload
-    // The tempFile will be replaced by the real file list after fetchConversation
+    setFileDtos((prev) => [...prev, tempFile]);
+    uploadFile({
+      file,
+      endpoint: '/api/conversation/upload-file',
+      acceptedExtensions: [
+        '.pdf',
+        '.docx',
+        '.txt',
+        '.md',
+        '.json',
+        '.log',
+        '.csv'
+      ],
+    });
   };
-  // Use drag and drop hook
+
   const dragDrop = useDragAndDrop(
     handleFileUpload,
     chatAreaRef as React.RefObject<HTMLElement>
@@ -190,12 +190,7 @@ function ChatArea() {
     setLoading(false);
   }, [fetchConversation]);
 
-  // --- Derived values ---
-  const visibleMessages = messages.filter(
-    (msg) => msg.sender !== 'system'
-  );
 
-  // --- Effects ---
   useEffect(() => {
     fetchConversation();
   }, [fetchConversation]);
@@ -203,7 +198,6 @@ function ChatArea() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // --- Render ---
   return (
     <>
       <div className='flex min-h-screen w-full items-center justify-center bg-zinc-900'>
@@ -220,17 +214,17 @@ function ChatArea() {
               {visibleMessages.map((msg) => (
                 <div
                   key={msg.messageId}
-                  className={`my-2 flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`my-2 flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
                     className={
                       'break-words break-all max-w-3xl whitespace-pre-line rounded-xl px-5 py-3 text-base shadow flex items-center min-h-[40px]' +
-                      (msg.sender === 'user'
+                      (msg.role === 'user'
                         ? ' ml-auto mr-1 rounded-br-md bg-blue-600 text-white'
                         : ' ml-1 mr-auto rounded-bl-md border border-zinc-700 bg-zinc-800 text-zinc-100')
                     }
                   >
-                    {msg.loading ? <span className='animate-pulse'>...thinking</span> : msg.text}
+                    {msg.loading ? <span className='animate-pulse'>...thinking</span> : msg.content}
                   </div>
                 </div>
               ))}
@@ -245,7 +239,7 @@ function ChatArea() {
           <div className='flex h-[9vh] max-h-[120px] min-h-[60px] flex-row items-end border-t border-zinc-300 bg-zinc-900'>
             <div className='h-full w-[40%] min-w-[220px] max-w-[420px] flex-shrink-0'>
               <div className='h-full'>
-                <FileList files={files} />
+                <FileDtoList fileDtos={fileDtos} />
               </div>
             </div>
             <div className='h-full flex-1'>
