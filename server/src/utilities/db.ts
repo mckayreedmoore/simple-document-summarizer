@@ -65,7 +65,7 @@ export async function setupDatabase() {
       CREATE TABLE IF NOT EXISTS Messages (
         messageId INTEGER PRIMARY KEY AUTOINCREMENT,
         role TEXT,
-        text TEXT,
+        content TEXT,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `
@@ -78,9 +78,9 @@ export async function setupDatabase() {
       CREATE VIEW IF NOT EXISTS MessagesSizeView AS
       SELECT 
         -- Calculate total text length
-        -- Add 8 bytes per message for JSON structure ({"text": "", "role": ""})
+        -- Add 8 bytes per message for JSON structure ({"content": "", "role": ""})
         -- Add 2 bytes for array brackets and divide by 1MB
-        (SUM(LENGTH(COALESCE(text, '')) + LENGTH(COALESCE(role, '')) + 8) + 2) / 1024.0 / 1024.0 as sizeInMb,
+        (SUM(LENGTH(COALESCE(content, '')) + LENGTH(COALESCE(role, '')) + 8) + 2) / 1024.0 / 1024.0 as sizeInMb,
         COUNT(*) as messageCount
       FROM Messages;
     `

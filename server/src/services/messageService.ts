@@ -1,7 +1,6 @@
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { FileService } from './fileService';
-import type { File } from '../models/file';
 import { Message } from '../models/message';
 import { logger } from '../utilities/logger';
 import { getDatabaseInstance, runAsync } from '../utilities/db';
@@ -23,7 +22,7 @@ export class MessageService {
     return new Promise((resolve, reject) => {
       this.db.all(
         `
-        SELECT messageId, role, text, createdAt
+        SELECT messageId, role, content, createdAt
         FROM Messages
         ORDER BY messageId ASC
         `,
@@ -38,14 +37,14 @@ export class MessageService {
     });
   }
 
-  async saveMessage(role: string, text: string): Promise<void> {
+  async saveMessage(role: string, content: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.db.run(
         `
-        INSERT INTO Messages (role, text)
+        INSERT INTO Messages (role, content)
         VALUES (?, ?)
         `,
-        [role, text],
+        [role, content],
         function (err: Error | null) {
           if (err) {
             logger.error('DB error in saveMessage:', err);
